@@ -1,0 +1,9 @@
+bazel-*
+.cache
+compile_commands.json
+dependency_issues.json
+target_exports.json
+external
+dist/
+.claude/
+docs/

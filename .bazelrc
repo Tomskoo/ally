@@ -1,0 +1,19 @@
+# Required for bazel_clang_tidy to operate as expected
+build:clang-tidy --aspects @bazel_clang_tidy//clang_tidy:clang_tidy.bzl%clang_tidy_aspect
+build:clang-tidy --output_groups=report
+
+# Optionally override the .clang-tidy config file target
+build:clang-tidy --@bazel_clang_tidy//:clang_tidy_config=//:clang_tidy_config
+# build:clang-tidy --@bazel_clang_tidy//:clang_tidy_resource_dir=@llvm//:resource_dir
+# build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=/opt/homebrew/Cellar/llvm/22.1.1/bin/clang-tidy
+#
+# build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@llvm//:clang_tidy
+# build:clang-tidy --@bazel_clang_tidy//:clang_tidy_resource_dir=@llvm//:resource_dir
+#
+build:clang-tidy --@bazel_clang_tidy//:clang_tidy_executable=@llvm_toolchain//:clang-tidy
+
+# Release build config
+build:release -c opt
+build:release --copt=-O3
+build:release --copt=-DNDEBUG
+build:release --strip=always

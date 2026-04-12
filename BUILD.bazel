@@ -1,0 +1,10 @@
+filegroup(
+    name = "clang_tidy_config",
+    srcs = [".clang-tidy"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "app",
+    actual = "//src/app:main",
+)

@@ -1,0 +1,104 @@
+name: "Tokyo Night"
+
+palette:
+  fg:         "#c0caf5"
+  bg:         "#1a1b26"
+  purple:     "#bb9af7"
+  blue:       "#7aa2f7"
+  light_blue: "#7dcfff"
+  green:      "#9ece6a"
+  cyan:       "#2ac3de"
+  orange:     "#ff9e64"
+  red:        "#ff757f"
+  teal:       "#73daca"
+  yellow:     "#e0af68"
+  muted:      "#565f89"
+  light_gray: "#a9b1d6"
+  light_cyan: "#89ddff"
+
+highlights:
+  # Identifiers
+  variable:              fg
+  variable.builtin:      red
+  variable.parameter:    yellow
+  variable.member:       teal
+  constant:              orange
+  constant.builtin:      orange
+  constant.macro:        light_blue
+  module:                blue
+  module.builtin:        blue
+  label:                 blue
+
+  # Literals
+  string:                green
+  string.documentation:  green
+  string.regexp:         green
+  string.escape:         cyan
+  string.special:        green
+  string.special.symbol: green
+  string.special.url:    blue
+  string.special.path:   green
+  character:             green
+  character.special:     cyan
+  boolean:               orange
+  number:                orange
+  number.float:          orange
+
+  # Types
+  type:                  cyan
+  type.builtin:          cyan
+  type.definition:       cyan
+  attribute:             yellow
+  attribute.builtin:     yellow
+  property:              teal
+
+  # Functions
+  function:              blue
+  function.builtin:      light_blue
+  function.call:         blue
+  function.macro:        light_blue
+  function.method:       blue
+  function.method.call:  blue
+  constructor:           orange
+  operator:              light_cyan
+
+  # Keywords
+  keyword:                     purple
+  keyword.coroutine:           purple
+  keyword.function:            purple
+  keyword.operator:            purple
+  keyword.import:              blue
+  keyword.type:                purple
+  keyword.modifier:            purple
+  keyword.repeat:              purple
+  keyword.return:              purple
+  keyword.debug:               purple
+  keyword.exception:           purple
+  keyword.conditional:         purple
+  keyword.conditional.ternary: purple
+  keyword.directive:           purple
+  keyword.directive.define:    purple
+
+  # Punctuation
+  punctuation.delimiter: muted
+  punctuation.bracket:   light_gray
+  punctuation.special:   cyan
+
+  # Comments
+  comment:               muted
+  comment.documentation: muted
+  comment.error:         red
+  comment.warning:       yellow
+  comment.todo:          yellow
+  comment.note:          cyan
+
+  # Diff
+  diff.plus:             green
+  diff.minus:            red
+  diff.delta:            blue
+
+  # Tags (HTML/XML)
+  tag:                   red
+  tag.builtin:           red
+  tag.attribute:         yellow
+  tag.delimiter:         muted

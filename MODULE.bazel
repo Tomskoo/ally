@@ -1,0 +1,244 @@
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "ftxui", version = "6.1.9")
+bazel_dep(name = "yaml-cpp", version = "0.9.0")
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "cpp-httplib",
+    url = "https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.18.3.tar.gz",
+    integrity = "sha256-oFZ7zWw/5c7xsym5YkURkEf4drSeBswSmjanqN/+Fz4=",
+    strip_prefix = "cpp-httplib-0.18.3",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "cpp-httplib",
+    hdrs = ["httplib.h"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+bazel_dep(name = "bazel_cc_meta", version = "0.2.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "toolchains_llvm", version = "1.6.0")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+llvm.toolchain(llvm_version = "19.1.0")
+use_repo(llvm, "llvm_toolchain")
+
+register_toolchains("@llvm_toolchain//:all")
+
+http_archive(
+    name = "cmark-gfm",
+    url = "https://github.com/github/cmark-gfm/archive/refs/tags/0.29.0.gfm.13.tar.gz",
+    integrity = "sha256-WrxheY69neVmC8B2RDwHq60rjRXbwRCUo6eWRLitJDo=",
+    strip_prefix = "cmark-gfm-0.29.0.gfm.13",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+genrule(
+    name = "gen_config_h",
+    outs = ["src/config.h"],
+    cmd = \"\"\"cat > $@ <<'HDR'
+#ifndef CMARK_CONFIG_H
+#define CMARK_CONFIG_H
+#define HAVE_STDBOOL_H
+#include <stdbool.h>
+#define HAVE___BUILTIN_EXPECT
+#define HAVE___ATTRIBUTE__
+#define CMARK_ATTRIBUTE(list) __attribute__ (list)
+#ifndef CMARK_INLINE
+#define CMARK_INLINE inline
+#endif
+#endif
+HDR
+\"\"\",
+)
+
+genrule(
+    name = "gen_version_h",
+    outs = ["src/cmark-gfm_version.h"],
+    cmd = \"\"\"cat > $@ <<'HDR'
+#ifndef CMARK_GFM_VERSION_H
+#define CMARK_GFM_VERSION_H
+#define CMARK_GFM_VERSION ((0 << 24) | (29 << 16) | (0 << 8) | 13)
+#define CMARK_GFM_VERSION_STRING "0.29.0.gfm.13"
+#endif
+HDR
+\"\"\",
+)
+
+genrule(
+    name = "gen_export_h",
+    outs = ["src/cmark-gfm_export.h"],
+    cmd = \"\"\"cat > $@ <<'HDR'
+#ifndef CMARK_GFM_EXPORT_H
+#define CMARK_GFM_EXPORT_H
+#define CMARK_GFM_EXPORT __attribute__((visibility("default")))
+#define CMARK_GFM_NO_EXPORT __attribute__((visibility("hidden")))
+#endif
+HDR
+\"\"\",
+)
+
+cc_library(
+    name = "cmark-gfm",
+    srcs = glob(["src/*.c", "src/*.inc"], exclude = ["src/main.c"]) + [
+        ":gen_config_h",
+        ":gen_version_h",
+        ":gen_export_h",
+    ],
+    hdrs = glob(["src/*.h"]),
+    includes = ["src"],
+    copts = ["-std=c99", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "tree-sitter",
+    url = "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.26.8.tar.gz",
+    integrity = "sha256-5oJrdTPsOohaulmDd6bSC1pjIf89t2lo6WDCNS06UHc=",
+    strip_prefix = "tree-sitter-0.26.8",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "tree-sitter",
+    srcs = ["lib/src/lib.c"],
+    textual_hdrs = glob(["lib/src/**/*.c", "lib/src/**/*.h"], exclude = ["lib/src/lib.c"]),
+    hdrs = ["lib/include/tree_sitter/api.h"],
+    includes = ["lib/include", "lib/src"],
+    copts = ["-std=c11", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "tree-sitter-cpp",
+    url = "https://github.com/tree-sitter/tree-sitter-cpp/archive/refs/tags/v0.23.4.tar.gz",
+    integrity = "sha256-eixVr+MCj0EF8ldi6ljMFlN9H1odzZzKkEELPNXUYFE=",
+    strip_prefix = "tree-sitter-cpp-0.23.4",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "tree-sitter-cpp",
+    srcs = ["src/parser.c", "src/scanner.c"],
+    hdrs = glob(["src/tree_sitter/*.h"]),
+    includes = ["src"],
+    deps = ["@tree-sitter"],
+    copts = ["-std=c11", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "tree-sitter-python",
+    url = "https://github.com/tree-sitter/tree-sitter-python/archive/refs/tags/v0.23.6.tar.gz",
+    integrity = "sha256-YwoPRezNm2mmage/R9FWjpapyFWi8w4JIcivcSHor5Y=",
+    strip_prefix = "tree-sitter-python-0.23.6",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "tree-sitter-python",
+    srcs = ["src/parser.c", "src/scanner.c"],
+    hdrs = glob(["src/tree_sitter/*.h"]),
+    includes = ["src"],
+    deps = ["@tree-sitter"],
+    copts = ["-std=c11", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "tree-sitter-javascript",
+    url = "https://github.com/tree-sitter/tree-sitter-javascript/archive/refs/tags/v0.23.1.tar.gz",
+    integrity = "sha256-/FuPWkkabbM8pIVLBEuJNj/3YV9CkZd0Z/UsG5KgwDI=",
+    strip_prefix = "tree-sitter-javascript-0.23.1",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "tree-sitter-javascript",
+    srcs = ["src/parser.c", "src/scanner.c"],
+    hdrs = glob(["src/tree_sitter/*.h"]),
+    includes = ["src"],
+    deps = ["@tree-sitter"],
+    copts = ["-std=c11", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "tree-sitter-rust",
+    url = "https://github.com/tree-sitter/tree-sitter-rust/archive/refs/tags/v0.24.2.tar.gz",
+    integrity = "sha256-Bh6QpTmlWmqmXc6wrWQlxQqxpuPm1LpDDieV7UVQ8Q4=",
+    strip_prefix = "tree-sitter-rust-0.24.2",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+cc_library(
+    name = "tree-sitter-rust",
+    srcs = ["src/parser.c", "src/scanner.c"],
+    hdrs = glob(["src/tree_sitter/*.h"]),
+    includes = ["src"],
+    deps = ["@tree-sitter"],
+    copts = ["-std=c11", "-Wno-unused-parameter"],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "efsw",
+    url = "https://github.com/SpartanJ/efsw/archive/refs/tags/1.5.1.tar.gz",
+    integrity = "sha256-QDaR4VtI3A5n59P+bmqj0Ra8hCB5Dfk9HZDSzsqgbnA=",
+    strip_prefix = "efsw-1.5.1",
+    build_file_content = """
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "efsw",
+    srcs = glob(
+        ["src/efsw/**/*.cpp"],
+        exclude = [
+            "src/efsw/FileWatcherWin32.cpp",
+            "src/efsw/WatcherWin32.cpp",
+            "src/efsw/FileWatcherInotify.cpp",
+            "src/efsw/WatcherInotify.cpp",
+            "src/efsw/platform/win/**",
+        ],
+    ),
+    hdrs = glob([
+        "include/efsw/**/*.h",
+        "include/efsw/**/*.hpp",
+    ]),
+    textual_hdrs = glob([
+        "src/efsw/**/*.hpp",
+        "src/efsw/**/*.h",
+        "src/efsw/**/*.inl",
+    ]),
+    includes = ["include", "src"],
+    copts = ["-std=c++17", "-Wno-deprecated-declarations"],
+    linkopts = [
+        "-framework", "CoreFoundation",
+        "-framework", "CoreServices",
+    ],
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "bazel_clang_tidy",
+    commit = "c4d35e0d0b838309358e57a2efed831780f85cd0",
+    remote = "https://github.com/erenon/bazel_clang_tidy.git",
+)
