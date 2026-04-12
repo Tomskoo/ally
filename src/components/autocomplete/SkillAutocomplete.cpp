@@ -178,7 +178,7 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
 
     if (filtered.empty()) {
       auto empty_row = text("No skills found") | dim | center;
-      return vbox({empty_row}) | vscroll_indicator | yframe | size(WIDTH, EQUAL, 60) | size(HEIGHT, LESS_THAN, 10) | border;
+      return vbox({empty_row}) | vscroll_indicator | yframe | xflex | size(HEIGHT, LESS_THAN, 10) | border;
     }
 
     Elements rows;
@@ -202,7 +202,7 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
       rows.push_back(row);
     }
 
-    return vbox(std::move(rows)) | vscroll_indicator | yframe | size(WIDTH, EQUAL, 60) | size(HEIGHT, LESS_THAN, 10) | border;
+    return vbox(std::move(rows)) | vscroll_indicator | yframe | xflex | size(HEIGHT, LESS_THAN, 10) | border;
   });
 
   // Wrap with CatchEvent for keyboard and mouse handling.

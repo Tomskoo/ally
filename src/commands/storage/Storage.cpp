@@ -469,6 +469,12 @@ auto ListArtifactCompletions(const fs::path& project_root, const std::string& ta
             [](const ally::autocomplete::ArtifactEntry& lhs, const ally::autocomplete::ArtifactEntry& rhs) -> bool {
               return lhs.stage < rhs.stage;
             });
+
+  result.insert(result.begin(), ally::autocomplete::ArtifactEntry{"task", "Task Directory", ".ally/tasks/" + task_id + "/"});
+  result.insert(result.begin(),
+                ally::autocomplete::ArtifactEntry{"thread", "Thread Directory",
+                                                  ".ally/tasks/" + task_id + "/threads/" + thread_id + "/"});
+
   return result;
 }
 

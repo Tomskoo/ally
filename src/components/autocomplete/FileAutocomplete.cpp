@@ -377,7 +377,7 @@ auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::fi
       }
     }
 
-    return vbox(std::move(rows)) | vscroll_indicator | yframe | size(WIDTH, EQUAL, 50) | size(HEIGHT, LESS_THAN, 10) | border;
+    return vbox(std::move(rows)) | vscroll_indicator | yframe | xflex | size(HEIGHT, LESS_THAN, 10) | border;
   });
 
   // Wrap with CatchEvent for keyboard/mouse handling.

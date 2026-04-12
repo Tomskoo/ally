@@ -1,0 +1,3 @@
+opencode:
+  lock_provider: true
+  default_provider: "opencode-go"

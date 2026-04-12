@@ -98,6 +98,9 @@ auto task_detail(AppContext& ctx, Navigator& nav, const std::string& task_id) ->
           auto thread_id = *state->confirm_archive_thread;
           if (ctx.task_provider.archive_thread(task_id, thread_id)) {
             state->task = ctx.task_provider.get_task(task_id);
+            if (state->task.has_value()) {
+              ctx.set_current_task(*state->task);
+            }
             if (*rebuild_fn) {
               (*rebuild_fn)();
             }

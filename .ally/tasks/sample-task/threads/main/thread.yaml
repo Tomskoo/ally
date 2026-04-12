@@ -1,0 +1,13 @@
+name: Sample Thread
+current_stage: design
+workflow_id: 554623d9-84bd-4214-b2d7-ff8488c34f4f
+created_at: 1774830648
+last_activity: 1774830648
+status: idle
+archived: false
+stage_sessions:
+  design: ses_2861ec895ffeqTWlJeWpF4DGIF
+  implementation: ses_2861ebb48ffe46zieidel1vNae
+  document: ses_2861eb86bffeBXuaV5bKNFgOZz
+  intent: ses_2861eb11dffeoYcmBtm1T2eRID
+  new_stage: ses_2861ea928ffeTPMW1UnuAJSLFQ

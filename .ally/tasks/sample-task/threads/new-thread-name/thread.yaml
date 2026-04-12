@@ -1,0 +1,11 @@
+name: New Thread Name
+current_stage: research
+workflow_id: 4244fe77-7a08-4758-aaea-4a0c9e95601b
+created_at: 1776020612
+last_activity: 1776020612
+status: idle
+archived: false
+stage_sessions:
+  research: ses_27cec1b69ffeIoh6IpJfQTrFHK
+  plan: ses_27cb9e942ffeAdxat8yErSXy1o
+  implement: ses_27cb9e803ffendXjkJaM4orI2b

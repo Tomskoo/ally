@@ -63,6 +63,10 @@ auto create_thread(AppContext& ctx, Navigator& nav, const std::string& task_id) 
 
         auto result = ctx.task_provider.create_thread(task_id, input);
         if (result.has_value()) {
+          auto refreshed = ctx.task_provider.get_task(task_id);
+          if (refreshed.has_value()) {
+            ctx.set_current_task(*refreshed);
+          }
           nav.go(StageViewState{task_id, result->id, result->current_stage});
         } else {
           state->submitting = false;

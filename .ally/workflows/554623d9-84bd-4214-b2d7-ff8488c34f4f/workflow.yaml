@@ -1,0 +1,24 @@
+name: Default workflow
+description: Sample workflow for evaluating Stage View v2
+created_at: 1774803802
+stages:
+  - id: intent
+    name: Intent
+    description: Define the purpose and scope of the feature
+    starting_prompt: What is the intent of this feature?
+  - id: design
+    name: Design
+    description: Architect the solution
+    starting_prompt: Design the architecture for this feature
+  - id: implementation
+    name: Implementation
+    description: Write the code
+    starting_prompt: Implement the designed solution
+  - id: document
+    name: Document
+    description: Write documentation for the feature
+    starting_prompt: Document the implementation
+  - id: new_stage
+    name: New Stage
+    description: Additional review stage
+    starting_prompt: Review and finalize

@@ -1,0 +1,13 @@
+name: Testing OpenCode
+current_stage: intent
+workflow_id: 554623d9-84bd-4214-b2d7-ff8488c34f4f
+created_at: 1775868439
+last_activity: 1775868439
+status: idle
+archived: false
+stage_sessions:
+  intent: ses_285fe15b2ffe7SsssuzQdodavm
+  design: ses_28347d411ffeuQ1lg86YSKTPEm
+  implementation: ses_28347c8eeffeuAsX33OO4aqhGN
+  document: ses_28347c7b3ffe9PlNgqQQ8AaYT0
+  new_stage: ses_28347bf08ffev37gtSRDwC4rOY
