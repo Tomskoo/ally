@@ -623,7 +623,7 @@ struct StageViewImpl {
 
     auto prompt_label = (interaction == InteractionMode::Insert) ? (text(" $ ") | bold | inverted) : (text(" $ ") | bold | dim);
 
-    auto send_label = !input_text.empty() ? (text(" M-⏎ Send ") | bold | inverted) : (text(" M-⏎ Send ") | dim);
+    auto send_label = !input_text.empty() ? (text(" M-⏎ Send ") | bold | color(Color::Green)) : (text(" M-⏎ Send ") | dim);
 
     // Only render the live input component (with cursor) in Insert mode.
     // In Normal/Visual mode, show the text without a cursor.
