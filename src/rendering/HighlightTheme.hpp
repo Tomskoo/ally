@@ -14,8 +14,12 @@ class HighlightTheme {
   /// Throws std::runtime_error if the file cannot be read or parsed.
   static auto Load(const std::filesystem::path& yaml_path) -> HighlightTheme;
 
-  /// Load the default theme from ~/.config/ally/themes/tokyonight.yaml.
-  /// Throws std::runtime_error if the file is missing or invalid.
+  /// Load a theme from a YAML string.
+  /// Throws std::runtime_error if the content cannot be parsed.
+  static auto LoadFromString(const std::string& yaml_content) -> HighlightTheme;
+
+  /// Load the default theme. Tries ~/.config/ally/themes/tokyonight.yaml first,
+  /// then falls back to the compiled-in embedded theme.
   static auto LoadDefault() -> HighlightTheme;
 
   /// Resolve a tree-sitter capture name to a color.

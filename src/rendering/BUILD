@@ -17,6 +17,7 @@ cc_library(
     hdrs = ["HighlightTheme.hpp"],
     visibility = ["//src:__subpackages__", "//benchmark:__subpackages__"],
     deps = [
+        "//data/themes:embedded_theme",
         "//src/configuration:paths",
         "@ftxui//:screen",
         "@yaml-cpp",

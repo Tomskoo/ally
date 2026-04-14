@@ -1,8 +1,10 @@
 #include "HighlightTheme.hpp"
 
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
+#include "data/themes/embedded_tokyonight.hpp"
 #include "src/configuration/Paths.hpp"
 #include "yaml-cpp/yaml.h"
 
@@ -24,7 +26,19 @@ auto ParseHex(const std::string& hex) -> ftxui::Color {
 }  // namespace
 
 auto HighlightTheme::Load(const std::filesystem::path& yaml_path) -> HighlightTheme {
-  YAML::Node root = YAML::LoadFile(yaml_path.string());
+  return LoadFromString(
+      [&] {
+        std::ifstream file(yaml_path);
+        if (!file.is_open()) {
+          throw std::runtime_error("Cannot open theme file: " + yaml_path.string());
+        }
+        return std::string{std::istreambuf_iterator<char>(file),
+                           std::istreambuf_iterator<char>()};
+      }());
+}
+
+auto HighlightTheme::LoadFromString(const std::string& yaml_content) -> HighlightTheme {
+  YAML::Node root = YAML::Load(yaml_content);
 
   // Parse palette: name -> Color
   std::unordered_map<std::string, ftxui::Color> palette;
@@ -60,7 +74,10 @@ auto HighlightTheme::Load(const std::filesystem::path& yaml_path) -> HighlightTh
 
 auto HighlightTheme::LoadDefault() -> HighlightTheme {
   auto path = configuration::themes_dir() / "tokyonight.yaml";
-  return Load(path);
+  if (std::filesystem::exists(path)) {
+    return Load(path);
+  }
+  return LoadFromString(std::string(embedded::kTokyonightTheme));
 }
 
 auto HighlightTheme::Resolve(std::string_view capture) const -> ftxui::Color {
