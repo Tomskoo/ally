@@ -68,4 +68,11 @@ auto GetStageSessionId(const std::filesystem::path& project_root, const std::str
 auto SaveStageSessionId(const std::filesystem::path& project_root, const std::string& task_id, const std::string& thread_id,
                         const std::string& stage, const std::string& session_id) -> bool;
 
+/// Look up the persisted model ID for a provider.
+auto GetModelForProvider(const std::filesystem::path& project_root, const std::string& provider_id) -> std::optional<std::string>;
+
+/// Persist a model selection for a provider.
+auto SetModelForProvider(const std::filesystem::path& project_root, const std::string& provider_id,
+                         const std::string& model_id) -> void;
+
 }  // namespace ally::commands::storage

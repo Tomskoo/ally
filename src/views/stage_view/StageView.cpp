@@ -286,6 +286,10 @@ struct StageViewImpl {
   // Skill service (must outlive the skills listener thread)
   std::shared_ptr<services::SkillService> skill_service;
 
+  // Model selector components
+  Component model_button;
+  Component model_menu;
+
   // Background threads
   std::atomic<bool> stop{false};
   std::thread artifact_event_thread;
@@ -326,14 +330,23 @@ struct StageViewImpl {
       interaction = state->interaction;
     }
 
+    Element content;
     if (interaction == InteractionMode::Visual) {
-      return RenderVisualMode();
+      content = RenderVisualMode();
+    } else if (panel == PanelMode::Artifact) {
+      content = RenderArtifactPanel();
+    } else {
+      content = RenderChatPanel();
     }
 
-    if (panel == PanelMode::Artifact) {
-      return RenderArtifactPanel();
-    }
-    return RenderChatPanel();
+    return dbox({
+        content,
+        vbox({
+            filler(),
+            hbox({filler(), RenderModelMenu()}),
+            emptyElement() | size(HEIGHT, EQUAL, 2),
+        }),
+    });
   }
 
   auto RenderArtifactPanel() -> Element {
@@ -602,7 +615,7 @@ struct StageViewImpl {
     });
   }
 
-  auto RenderInputBar() const -> Element {
+  auto RenderInputBar() -> Element {
     InteractionMode interaction;
     {
       std::scoped_lock lock(state->mtx);
@@ -630,14 +643,60 @@ struct StageViewImpl {
     auto input_el = (interaction == InteractionMode::Insert) ? input_component->Render()
                                                              : text(input_text.empty() ? "type a message..." : input_text) | dim;
 
+    auto model_el = RenderModelSelector();
+
     return hbox({
         mode_label,
         separator(),
         prompt_label,
         input_el | flex,
         separator(),
+        model_el,
+        separator(),
         send_label,
     });
+  }
+
+  int last_model_idx = -1;
+
+  auto RenderModelSelector() -> Element {
+    CheckProviderChanged();
+
+    std::string provider_id;
+    {
+      std::shared_lock plock(ctx.provider_mutex);
+      provider_id = ctx.selected_provider.value_or("");
+    }
+
+    bool has_models = false;
+    {
+      std::scoped_lock lock(state->mtx);
+      has_models = !state->chat.model_dropdown_names.empty();
+
+      int current_idx = state->chat.selected_model_idx;
+      if (has_models && current_idx != last_model_idx && current_idx >= 0 &&
+          current_idx < static_cast<int>(state->chat.filtered_models.size())) {
+        last_model_idx = current_idx;
+        auto model_id = state->chat.filtered_models[current_idx].id;
+        auto root = ctx.project_root;
+        std::thread([root, provider_id, model_id]() -> void {
+          commands::storage::SetModelForProvider(root, provider_id, model_id);
+        }).detach();
+      }
+    }
+
+    if (!has_models) {
+      return text(" no models ") | dim;
+    }
+    return model_button->Render();
+  }
+
+  auto RenderModelMenu() -> Element {
+    std::scoped_lock lock(state->mtx);
+    if (!state->chat.model_menu_open || state->chat.model_dropdown_names.empty()) {
+      return emptyElement();
+    }
+    return model_menu->Render() | border;
   }
 
   auto RenderAutocompleteOverlay() const -> Element {
@@ -801,6 +860,11 @@ struct StageViewImpl {
     if (event == Event::Special({27, 13}) && !input_text.empty()) {
       DoSend();
       return true;
+    }
+
+    // Let mouse events through so the model button/menu can receive clicks.
+    if (event.is_mouse()) {
+      return false;
     }
 
     // Consume all remaining events in Normal mode — the input component
@@ -1165,9 +1229,22 @@ struct StageViewImpl {
     auto& ocm = ctx.opencode_mutex;
     auto& scr = screen;
 
-    std::thread([sptr, sid, trimmed, &ocs, &ocm, &scr] -> void {
+    std::optional<std::pair<std::string, std::string>> model_spec;
+    {
+      std::scoped_lock lock(state->mtx);
+      int idx = state->chat.selected_model_idx;
+      if (idx >= 0 && idx < static_cast<int>(state->chat.filtered_models.size())) {
+        auto& mdl = state->chat.filtered_models[idx];
+        model_spec = {mdl.id, mdl.provider};
+      }
+    }
+
+    std::thread([sptr, sid, trimmed, model_spec, &ocs, &ocm, &scr]() -> void {
       opencode::AsyncPromptRequest req;
       req.data = {{"parts", {{{"type", "text"}, {"text", trimmed}}}}};
+      if (model_spec.has_value()) {
+        req.data["model"] = {{"modelID", model_spec->first}, {"providerID", model_spec->second}};
+      }
       auto result = opencode::PromptAsync(ocs, ocm, sid, req);
       if (opencode::is_ok(result)) {
         // Query session status after sending
@@ -1183,6 +1260,69 @@ struct StageViewImpl {
     }).detach();
 
     screen.PostEvent(Event::Custom);
+  }
+
+  // -- Model selection ---------------------------------------------------------
+
+  void FilterModelsForProvider() {
+    std::string provider_id;
+    {
+      std::shared_lock plock(ctx.provider_mutex);
+      provider_id = ctx.selected_provider.value_or("");
+    }
+
+    std::scoped_lock lock(state->mtx);
+    state->chat.last_seen_provider = provider_id;
+    state->chat.filtered_models.clear();
+    state->chat.model_dropdown_names.clear();
+
+    for (const auto& model : state->chat.all_models) {
+      if (model.provider == provider_id) {
+        state->chat.filtered_models.push_back(model);
+        state->chat.model_dropdown_names.push_back(model.name);
+      }
+    }
+
+    auto persisted = commands::storage::GetModelForProvider(ctx.project_root, provider_id);
+    state->chat.selected_model_idx = 0;
+    if (persisted.has_value()) {
+      for (int idx = 0; idx < static_cast<int>(state->chat.filtered_models.size()); ++idx) {
+        if (state->chat.filtered_models[idx].id == *persisted) {
+          state->chat.selected_model_idx = idx;
+          break;
+        }
+      }
+    }
+  }
+
+  void LoadModels() {
+    auto result = opencode::ListModels(ctx.opencode_state, ctx.opencode_mutex);
+    if (opencode::is_ok(result)) {
+      {
+        std::scoped_lock lock(state->mtx);
+        state->chat.all_models = opencode::get_value(result);
+      }
+      FilterModelsForProvider();
+    }
+    screen.PostEvent(Event::Custom);
+  }
+
+  void CheckProviderChanged() {
+    std::string current_provider;
+    {
+      std::shared_lock plock(ctx.provider_mutex);
+      current_provider = ctx.selected_provider.value_or("");
+    }
+
+    bool changed = false;
+    {
+      std::scoped_lock lock(state->mtx);
+      changed = state->chat.last_seen_provider.has_value() && *state->chat.last_seen_provider != current_provider;
+    }
+
+    if (changed) {
+      FilterModelsForProvider();
+    }
   }
 
   // -- Chat: session resolution -----------------------------------------------
@@ -1354,9 +1494,47 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
     impl->LoadReviewArtifact(impl->stage);
   }).detach();
 
+  // -- Model dropdown component ------------------------------------------------
+
+  {
+    ButtonOption model_btn_opt = ButtonOption::Ascii();
+    model_btn_opt.transform = [state = impl->state](const EntryState&) -> Element {
+      std::scoped_lock lock(state->mtx);
+      int idx = state->chat.selected_model_idx;
+      if (idx >= 0 && idx < static_cast<int>(state->chat.model_dropdown_names.size())) {
+        auto label = state->chat.model_dropdown_names[idx];
+        auto arrow = state->chat.model_menu_open ? " ▴" : " ▾";
+        return text(" " + label + arrow + " ");
+      }
+      return text(" no models ") | dim;
+    };
+    impl->model_button = Button(
+        "",
+        [state = impl->state]() -> void {
+          std::scoped_lock lock(state->mtx);
+          state->chat.model_menu_open = !state->chat.model_menu_open;
+        },
+        model_btn_opt);
+
+    auto select_model = [state = impl->state]() -> void {
+      std::scoped_lock lock(state->mtx);
+      state->chat.model_menu_open = false;
+    };
+    impl->model_menu = Menu({
+        .entries = &impl->state->chat.model_dropdown_names,
+        .selected = &impl->state->chat.selected_model_idx,
+        .on_change = select_model,
+        .on_enter = select_model,
+    });
+  }
+
   // -- Chat session resolution on a background thread -------------------------
 
-  std::thread([impl] -> void { impl->ResolveSession(); }).detach();
+  std::thread([impl]() -> void { impl->ResolveSession(); }).detach();
+
+  // -- Model loading on a background thread -----------------------------------
+
+  std::thread([impl]() -> void { impl->LoadModels(); }).detach();
 
   // Artifact event monitoring thread
   impl->artifact_event_thread = std::thread([impl] -> void {
@@ -1379,7 +1557,8 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
     }
   });
 
-  auto comp = Renderer(impl->input_component, [impl] -> Element { return impl->Render(); });
+  auto interactive = Container::Vertical({impl->input_component, impl->model_button, impl->model_menu});
+  auto comp = Renderer(interactive, [impl]() -> Element { return impl->Render(); });
   comp = CatchEvent(comp, [impl](Event event) -> bool { return impl->HandleEvent(std::move(event)); });
   return comp;
 }

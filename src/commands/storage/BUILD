@@ -8,6 +8,7 @@ cc_library(
     deps = [
         "//src/components/autocomplete:artifact_types",
         "//src/components/autocomplete:autocomplete_types",
+        "//src/configuration",
         "//src/models",
         "@yaml-cpp",
     ],

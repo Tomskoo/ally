@@ -59,6 +59,14 @@ struct ChatPanelState {
   int chat_scroll_y = INT_MAX;
   bool chat_follow = true;  // Auto-scroll to bottom on new content.
   uint64_t frame_count = 0;
+
+  // Model selection
+  std::vector<opencode::ModelInfo> all_models;
+  std::vector<opencode::ModelInfo> filtered_models;
+  std::vector<std::string> model_dropdown_names;
+  int selected_model_idx = 0;
+  bool model_menu_open = false;
+  std::optional<std::string> last_seen_provider;
 };
 
 struct StageViewState {

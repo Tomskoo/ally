@@ -8,6 +8,7 @@
 #include <sstream>
 #include <unordered_map>
 
+#include "src/configuration/Configuration.hpp"
 #include "yaml-cpp/yaml.h"
 
 namespace fs = std::filesystem;
@@ -521,6 +522,19 @@ auto SaveStageSessionId(const fs::path& project_root, const std::string& task_id
   } catch (...) {
     return false;
   }
+}
+
+auto GetModelForProvider(const fs::path& project_root, const std::string& provider_id) -> std::optional<std::string> {
+  auto config = configuration::LoadOpenCodeConfig(project_root);
+  auto it = config.model_per_provider.find(provider_id);
+  if (it != config.model_per_provider.end()) {
+    return it->second;
+  }
+  return std::nullopt;
+}
+
+auto SetModelForProvider(const fs::path& project_root, const std::string& provider_id, const std::string& model_id) -> void {
+  configuration::SaveModelForProvider(project_root, provider_id, model_id);
 }
 
 }  // namespace ally::commands::storage
