@@ -18,6 +18,7 @@
 #include "src/commands/storage/Storage.hpp"
 #include "src/components/bottom_bar/BottomBar.hpp"
 #include "src/components/nav_bar/NavBar.hpp"
+#include "src/components/splash/Splash.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
 #include "src/configuration/Configuration.hpp"
 #include "src/opencode/Error.hpp"
@@ -47,6 +48,13 @@ template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr int kScrollLines = 3;
+
+auto has_flag(int argc, char** argv, const char* flag) -> bool {
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == flag) return true;
+  }
+  return false;
+}
 // ESC (0x1b) is the prefix byte terminals emit for Meta/Alt modifiers —
 // e.g. Meta+P arrives as the two-byte sequence {ESC, 'p'}.
 constexpr char kEscByte = 27;
@@ -275,6 +283,8 @@ auto main(int argc, char* argv[]) -> int {
   try {
     auto screen = ScreenInteractive::Fullscreen();
 
+    bool show_splash = !has_flag(argc, argv, "--skip-splash");
+
     auto project_root = parse_project_root(argc, argv);
 
     auto provider = ally::providers::FileTaskProvider(project_root);
@@ -397,7 +407,26 @@ auto main(int argc, char* argv[]) -> int {
     };
     auto main_component = CatchEvent(renderer, [&](const Event& event) -> bool { return handle_app_event(event, nav, components); });
 
-    screen.Loop(main_component);
+    if (show_splash) {
+      auto splash_done = std::make_shared<bool>(false);
+      auto splash = ally::components::splash_screen(screen, [&]() { *splash_done = true; });
+
+      auto root = Renderer(main_component, [&]() -> Element {
+        if (!*splash_done) {
+          return splash->Render();
+        }
+        return main_component->Render();
+      }) | CatchEvent([&](const Event& event) -> bool {
+        if (!*splash_done) {
+          return splash->OnEvent(event);
+        }
+        return main_component->OnEvent(event);
+      });
+
+      screen.Loop(root);
+    } else {
+      screen.Loop(main_component);
+    }
 
     // Stop SSE subscription before shutting down the server
     sse_sub.reset();

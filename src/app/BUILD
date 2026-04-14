@@ -45,6 +45,7 @@ cc_binary(
         "//src/components/bottom_bar",
         "//src/components/nav_bar",
         "//src/components/scrollable",
+        "//src/components/splash",
         "//src/opencode:error",
         "//src/opencode:lifecycle",
         "//src/opencode:service",
