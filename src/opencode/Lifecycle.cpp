@@ -127,6 +127,9 @@ auto Spawn(const SpawnArgs& args) -> Result<OpenCodeProcess> {
 
     posix_spawn_file_actions_t file_actions;
     posix_spawn_file_actions_init(&file_actions);
+    if (!args.working_dir.empty()) {
+      posix_spawn_file_actions_addchdir_np(&file_actions, args.working_dir.c_str());
+    }
     posix_spawn_file_actions_addopen(&file_actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
     posix_spawn_file_actions_addopen(&file_actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
 

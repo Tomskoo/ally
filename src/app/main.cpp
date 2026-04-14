@@ -109,7 +109,7 @@ auto init_opencode_server(ally::AppContext& ctx, const ally::configuration::Open
     }
     return;
   }
-  auto spawn_result = ally::opencode::lifecycle::Spawn({});
+  auto spawn_result = ally::opencode::lifecycle::Spawn({.working_dir = ctx.project_root});
   std::unique_lock lock(ctx.opencode_mutex);
   if (ally::opencode::is_ok(spawn_result)) {
     const auto& proc = ally::opencode::get_value(spawn_result);
