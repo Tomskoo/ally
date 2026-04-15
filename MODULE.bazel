@@ -96,6 +96,16 @@ cc_library(
     copts = ["-std=c99", "-Wno-unused-parameter"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "cmark-gfm-extensions",
+    srcs = glob(["extensions/*.c", "extensions/*.h"]),
+    hdrs = ["extensions/cmark-gfm-core-extensions.h"],
+    includes = ["extensions"],
+    copts = ["-std=c99", "-Wno-unused-parameter"],
+    deps = [":cmark-gfm"],
+    visibility = ["//visibility:public"],
+)
 """,
 )
 

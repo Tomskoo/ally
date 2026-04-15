@@ -1,9 +1,13 @@
 #include "PlainRenderer.hpp"
 
+#include <cmark-gfm-core-extensions.h>
 #include <cmark-gfm.h>
 
+#include <algorithm>
+#include <cstring>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/flexbox_config.hpp>
+#include <mutex>
 #include <sstream>
 
 using namespace ftxui;
@@ -93,6 +97,62 @@ auto RenderInlineWrapped(cmark_node* node) -> Element {
   return flexbox(std::move(words), config);
 }
 
+// Render a GFM table node into a bordered grid with styled header row.
+auto RenderTable(cmark_node* table_node) -> Element {
+  // First pass: collect cell text and measure column widths.
+  std::vector<std::vector<std::string>> rows;
+  std::vector<size_t> col_widths;
+  bool first_row_is_header = false;
+
+  for (auto* row = cmark_node_first_child(table_node); row != nullptr; row = cmark_node_next(row)) {
+    if (rows.empty()) {
+      first_row_is_header = cmark_gfm_extensions_get_table_row_is_header(row) != 0;
+    }
+    std::vector<std::string> cells;
+    size_t col = 0;
+    for (auto* cell = cmark_node_first_child(row); cell != nullptr; cell = cmark_node_next(cell)) {
+      auto cell_text = CollectText(cell);
+      if (col >= col_widths.size()) {
+        col_widths.push_back(cell_text.size());
+      } else {
+        col_widths[col] = std::max(col_widths[col], cell_text.size());
+      }
+      cells.push_back(std::move(cell_text));
+      ++col;
+    }
+    rows.push_back(std::move(cells));
+  }
+
+  // Enforce minimum column width.
+  for (auto& w : col_widths) {
+    w = std::max(w, size_t{4});
+  }
+
+  // Second pass: render rows.
+  Elements row_elements;
+  for (size_t r = 0; r < rows.size(); ++r) {
+    Elements cell_elements;
+    bool is_header = (r == 0 && first_row_is_header);
+    for (size_t c = 0; c < col_widths.size(); ++c) {
+      std::string cell_text = (c < rows[r].size()) ? rows[r][c] : "";
+      auto el = text(cell_text);
+      if (is_header) {
+        el = el | bold | color(Color::Cyan);
+      }
+      cell_elements.push_back(std::move(el) | size(WIDTH, EQUAL, static_cast<int>(col_widths[c] + 2)));
+      if (c + 1 < col_widths.size()) {
+        cell_elements.push_back(separator());
+      }
+    }
+    row_elements.push_back(hbox(std::move(cell_elements)));
+    if (is_header) {
+      row_elements.push_back(separator());
+    }
+  }
+
+  return vbox(std::move(row_elements)) | border;
+}
+
 // Forward declaration — RenderBlock and RenderChildren are mutually recursive.
 auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element;
 
@@ -175,15 +235,43 @@ auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element {
     case CMARK_NODE_LINEBREAK:
       return RenderInlineWrapped(node);
 
-    default:
+    default: {
+      // Handle extension node types (runtime values, not compile-time constants).
+      auto type_str = std::string(cmark_node_get_type_string(node));
+      if (type_str == "table") {
+        return RenderTable(node);
+      }
+      if (type_str == "table_row") {
+        // Rows are handled by RenderTable; fallback renders children.
+        Elements cells;
+        for (auto* child = cmark_node_first_child(node); child != nullptr; child = cmark_node_next(child)) {
+          cells.push_back(RenderBlock(child, renderer));
+        }
+        return hbox(std::move(cells));
+      }
+      if (type_str == "table_cell") {
+        return RenderInlineWrapped(node);
+      }
       return vbox(RenderChildren(node, renderer));
+    }
   }
 }
 
 }  // namespace
 
 auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedBlock> {
-  cmark_node* doc = cmark_parse_document(markdown.c_str(), markdown.size(), CMARK_OPT_DEFAULT);
+  // Register GFM extensions once (thread-safe).
+  static std::once_flag gfm_init;
+  std::call_once(gfm_init, [] { cmark_gfm_core_extensions_ensure_registered(); });
+
+  // Use the parser API so we can attach the table extension.
+  cmark_parser* parser = cmark_parser_new(CMARK_OPT_DEFAULT);
+  auto* table_ext = cmark_find_syntax_extension("table");
+  if (table_ext != nullptr) {
+    cmark_parser_attach_syntax_extension(parser, table_ext);
+  }
+  cmark_parser_feed(parser, markdown.c_str(), markdown.size());
+  cmark_node* doc = cmark_parser_finish(parser);
 
   std::vector<RenderedBlock> blocks;
   for (auto* node = cmark_node_first_child(doc); node != nullptr; node = cmark_node_next(node)) {
@@ -203,13 +291,19 @@ auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedB
         kind = RenderedBlock::List;
         break;
       default:
-        kind = RenderedBlock::Paragraph;
+        // Extension node types are runtime values, check by type string.
+        if (std::strcmp(cmark_node_get_type_string(node), "table") == 0) {
+          kind = RenderedBlock::Table;
+        } else {
+          kind = RenderedBlock::Paragraph;
+        }
         break;
     }
     blocks.push_back({kind, RenderBlock(node, *this)});
   }
 
   cmark_node_free(doc);
+  cmark_parser_free(parser);
   return blocks;
 }
 

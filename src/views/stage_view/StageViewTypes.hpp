@@ -3,6 +3,7 @@
 #include <climits>
 #include <cstdint>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/box.hpp>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -55,6 +56,7 @@ struct ChatPanelState {
   bool has_artifact = false;
   std::unordered_map<std::string, int64_t> part_timestamps;
   std::unordered_set<std::string> expanded_parts;
+  std::unordered_map<std::string, ftxui::Box> collapsible_boxes;
   std::unordered_map<std::string, CachedPartRender> rendered_parts_cache;
   int chat_scroll_y = INT_MAX;
   bool chat_follow = true;  // Auto-scroll to bottom on new content.

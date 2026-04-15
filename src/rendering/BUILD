@@ -7,6 +7,7 @@ cc_library(
     visibility = ["//src:__subpackages__", "//benchmark:__subpackages__"],
     deps = [
         "@cmark-gfm",
+        "@cmark-gfm//:cmark-gfm-extensions",
         "@ftxui//:dom",
     ],
 )

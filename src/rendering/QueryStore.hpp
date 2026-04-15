@@ -30,6 +30,10 @@ class QueryStore {
   /// unknown or the .scm file could not be loaded/compiled.
   auto Get(const std::string& lang) -> CompiledLang*;
 
+  /// Map a file path to a canonical language name based on its extension.
+  /// Returns "" if the extension is not recognized.
+  static auto LanguageFromPath(const std::string& path) -> std::string;
+
  private:
   HighlightTheme theme_;
   std::unordered_map<std::string, CompiledLang> cache_;

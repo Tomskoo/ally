@@ -114,6 +114,22 @@ void QueryStore::Compile(CompiledLang& entry, const std::string& query_text) {
   }
 }
 
+auto QueryStore::LanguageFromPath(const std::string& path) -> std::string {
+  auto dot = path.rfind('.');
+  if (dot == std::string::npos) { return "";
+}
+  auto ext = path.substr(dot);
+  if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".hpp" || ext == ".hxx" || ext == ".h") { return "cpp";
+}
+  if (ext == ".py" || ext == ".pyi") { return "python";
+}
+  if (ext == ".js" || ext == ".mjs" || ext == ".cjs" || ext == ".jsx") { return "javascript";
+}
+  if (ext == ".rs") { return "rust";
+}
+  return "";
+}
+
 auto QueryStore::Get(const std::string& lang) -> CompiledLang* {
   auto canonical = Normalize(lang);
 

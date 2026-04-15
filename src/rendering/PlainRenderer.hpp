@@ -7,7 +7,7 @@
 namespace ally::rendering {
 
 struct RenderedBlock {
-  enum Kind : std::uint8_t { Paragraph, CodeBlock, Heading, Quote, List, Diff };
+  enum Kind : std::uint8_t { Paragraph, CodeBlock, Heading, Quote, List, Diff, Table };
   Kind kind;
   ftxui::Element element;
 };

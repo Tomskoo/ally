@@ -64,6 +64,41 @@ auto SplitLines(const std::string& s) -> std::vector<std::string> {
   return lines;
 }
 
+// Extract raw code from Read tool output, stripping <content> tags and line-number prefixes.
+auto ExtractFileContent(const std::string& output) -> std::string {
+  auto content_start = output.find("<content>");
+  auto content_end = output.rfind("</content>");
+  if (content_start == std::string::npos || content_end == std::string::npos) { return "";
+}
+  content_start += 9;  // strlen("<content>")
+  auto raw = output.substr(content_start, content_end - content_start);
+
+  // Strip line-number prefixes ("1: ", "10: ", etc.) and the trailing "(End of file ...)" line.
+  std::string result;
+  std::istringstream stream(raw);
+  std::string line;
+  while (std::getline(stream, line)) {
+    if (line.find("(End of file") == 0) { continue;
+}
+    // Strip leading "N: " prefix.
+    auto colon = line.find(": ");
+    if (colon != std::string::npos && colon <= 6) {
+      bool all_digits = true;
+      for (size_t i = 0; i < colon; ++i) {
+        if (line[i] < '0' || line[i] > '9') { all_digits = false; break;
+}
+      }
+      if (all_digits) {
+        line = line.substr(colon + 2);
+      }
+    }
+    if (!result.empty()) { result += '\n';
+}
+    result += line;
+  }
+  return result;
+}
+
 void CopyToClipboard(const std::string& content) {
   FILE* pipe = popen("pbcopy", "w");
   if (pipe != nullptr) {
@@ -137,12 +172,57 @@ auto GetOrCreateMessage(StageViewState& state, const std::string& msg_id) -> aut
   msgs.erase(std::remove_if(msgs.begin(), msgs.end(),
                             [](const opencode::MessageWithParts& msg) -> bool { return msg.info.id.rfind("optimistic-", 0) == 0; }),
              msgs.end());
-  // Create new entry.
+  // Create new entry — default to assistant role since user messages are
+  // always created locally as optimistic messages in DoSend().
   opencode::MessageWithParts new_msg;
   new_msg.info.id = msg_id;
   new_msg.info.extra = nlohmann::json::object();
+  new_msg.info.extra["role"] = "assistant";
   state.chat.messages.push_back(std::move(new_msg));
   return state.chat.messages.back();
+}
+
+void MergeMessages(StageViewState& state, std::vector<opencode::MessageWithParts> fetched) {
+  // Build lookup of existing messages by ID.
+  std::unordered_map<std::string, size_t> existing_index;
+  for (size_t i = 0; i < state.chat.messages.size(); ++i) {
+    existing_index[state.chat.messages[i].info.id] = i;
+  }
+
+  // Use the fetched list as canonical ordering.
+  std::unordered_set<std::string> fetched_ids;
+  std::vector<opencode::MessageWithParts> merged;
+  merged.reserve(fetched.size() + 2);
+
+  for (auto& fetched_msg : fetched) {
+    fetched_ids.insert(fetched_msg.info.id);
+    auto it = existing_index.find(fetched_msg.info.id);
+    if (it != existing_index.end()) {
+      auto& existing_msg = state.chat.messages[it->second];
+      // Always take metadata from the fetched version (has role, etc.).
+      existing_msg.info.extra = fetched_msg.info.extra;
+      // Keep in-memory parts if they are ahead of the HTTP response
+      // (streaming deltas may have added content not yet persisted).
+      if (existing_msg.parts.size() > fetched_msg.parts.size()) {
+        merged.push_back(std::move(existing_msg));
+      } else {
+        merged.push_back(std::move(fetched_msg));
+      }
+    } else {
+      merged.push_back(std::move(fetched_msg));
+    }
+  }
+
+  // Keep any in-memory-only non-optimistic messages (may not be persisted yet).
+  for (auto& existing_msg : state.chat.messages) {
+    if (fetched_ids.count(existing_msg.info.id) == 0 &&
+        existing_msg.info.id.rfind("optimistic-", 0) != 0) {
+      merged.push_back(std::move(existing_msg));
+    }
+  }
+
+  state.chat.messages = std::move(merged);
+  state.chat.rendered_parts_cache.clear();
 }
 
 void RefreshMessages(const std::shared_ptr<StageViewState>& state, opencode::OpenCodeState& oc_state, std::shared_mutex& oc_mutex,
@@ -157,8 +237,7 @@ void RefreshMessages(const std::shared_ptr<StageViewState>& state, opencode::Ope
   auto result = opencode::ListMessages(oc_state, oc_mutex, sid);
   if (opencode::is_ok(result)) {
     std::scoped_lock lock(state->mtx);
-    state->chat.messages = std::move(opencode::get_value(std::move(result)));
-    state->chat.rendered_parts_cache.clear();
+    MergeMessages(*state, std::move(opencode::get_value(std::move(result))));
     for (size_t idx = 0; idx < state->chat.messages.size(); ++idx) {
       for (size_t pidx = 0; pidx < state->chat.messages[idx].parts.size(); ++pidx) {
         StampPart(*state, state->chat.messages[idx].info.id, pidx);
@@ -387,7 +466,7 @@ struct StageViewImpl {
     });
   }
 
-  auto RenderToolResultPart(const std::string& msg_id, size_t part_idx, const std::string& content) const -> Element {
+  auto RenderToolResultPart(const std::string& msg_id, size_t part_idx, const std::string& content) -> Element {
     constexpr int kCollapseThreshold = 8;
     constexpr int kCollapsePreviewLines = 4;
 
@@ -409,7 +488,160 @@ struct StageViewImpl {
     return vbox({
         paragraph(preview) | dim,
         text("  ... " + std::to_string(remaining) + " more lines") | dim,
+    }) | reflect(state->chat.collapsible_boxes[key]);
+  }
+
+  static auto FormatDuration(double seconds) -> std::string {
+    char buf[32];
+    if (seconds < 60.0) {
+      std::snprintf(buf, sizeof(buf), "%.1fs", seconds);
+    } else {
+      int mins = static_cast<int>(seconds) / 60;
+      double secs = seconds - mins * 60;
+      std::snprintf(buf, sizeof(buf), "%dm %.1fs", mins, secs);
+    }
+    return buf;
+  }
+
+  auto RenderSubAgentPart(const nlohmann::json& part) -> Element {
+    auto tool_state = part.value("state", nlohmann::json::object());
+    auto input = tool_state.value("input", nlohmann::json::object());
+    auto title = tool_state.value("title", "");
+    auto status = tool_state.value("status", "");
+
+    auto subagent_type = input.value("subagent_type", "task");
+    auto description = input.value("description", title);
+
+    // Capitalize first letter.
+    std::string type_label = subagent_type;
+    if (!type_label.empty()) {
+      type_label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(type_label[0])));
+    }
+
+    Element header = hbox({
+        text(type_label + " Task") | bold,
+        text(" \u2014 ") | dim,
+        text(description),
     });
+
+    // Duration from time.start/end.
+    Elements meta_parts;
+    auto time_obj = tool_state.value("time", nlohmann::json::object());
+    if (time_obj.contains("start") && time_obj.contains("end")) {
+      double duration_s =
+          static_cast<double>(time_obj["end"].get<int64_t>() - time_obj["start"].get<int64_t>()) / 1000.0;
+      meta_parts.push_back(text(FormatDuration(duration_s)) | dim);
+    }
+    if (status != "completed") {
+      meta_parts.push_back(text("Running...") | color(Color::Yellow));
+    }
+
+    Element meta_el = meta_parts.empty() ? emptyElement() : hbox(std::move(meta_parts));
+
+    return hbox({
+        text("\u2502 ") | color(Color::Blue),
+        vbox({header, meta_el}),
+    });
+  }
+
+  auto RenderToolPart(const std::string& msg_id, size_t part_idx, const nlohmann::json& part) -> Element {
+    auto tool_name = part.value("tool", "tool");
+
+    // Sub-agent tools get compact rendering.
+    if (tool_name == "task") {
+      return RenderSubAgentPart(part);
+    }
+
+    auto tool_state = part.value("state", nlohmann::json::object());
+    auto title = tool_state.value("title", "");
+    auto status = tool_state.value("status", "");
+    auto output = tool_state.value("output", "");
+    auto input = tool_state.value("input", nlohmann::json::object());
+
+    auto cache_key = msg_id + ":" + std::to_string(part_idx);
+    auto& cached = state->chat.rendered_parts_cache[cache_key];
+    if (cached.element && cached.content_length == output.size()) {
+      // Still need reflect for click tracking even on cache hit.
+      if (!output.empty()) {
+        return cached.element | reflect(state->chat.collapsible_boxes[cache_key]);
+      }
+      return cached.element;
+    }
+
+    // Header: title or tool name.
+    std::string header_text = title.empty() ? tool_name : title;
+    Elements els;
+    els.push_back(text("# " + header_text) | bold);
+
+    // Show command/input if available.
+    if (input.contains("command") && input["command"].is_string()) {
+      els.push_back(text("$ " + input["command"].get<std::string>()) | color(Color::GrayLight));
+    } else if (input.contains("file_path") && input["file_path"].is_string()) {
+      els.push_back(text("$ " + input["file_path"].get<std::string>()) | color(Color::GrayLight));
+    } else if (input.contains("pattern") && input["pattern"].is_string()) {
+      els.push_back(text("$ " + input["pattern"].get<std::string>()) | color(Color::GrayLight));
+    }
+
+    // Show tool output as collapsible content.
+    if (!output.empty()) {
+      bool expanded = state->chat.expanded_parts.count(cache_key) > 0;
+
+      // Detect file path for syntax highlighting.
+      std::string file_path;
+      if (input.contains("filePath") && input["filePath"].is_string()) {
+        file_path = input["filePath"].get<std::string>();
+      } else if (input.contains("file_path") && input["file_path"].is_string()) {
+        file_path = input["file_path"].get<std::string>();
+      }
+      auto lang = rendering::QueryStore::LanguageFromPath(file_path);
+      auto clean_code = !lang.empty() ? ExtractFileContent(output) : std::string{};
+
+      constexpr int kCollapseThreshold = 8;
+      constexpr int kCollapsePreviewLines = 4;
+      auto lines = SplitLines(!clean_code.empty() ? clean_code : output);
+
+      if (static_cast<int>(lines.size()) <= kCollapseThreshold || expanded) {
+        if (!clean_code.empty()) {
+          rendering::TreeSitterRenderer renderer(theme);
+          els.push_back(renderer.RenderCodeBlock(clean_code, lang));
+        } else {
+          els.push_back(paragraph(output));
+        }
+      } else {
+        if (!clean_code.empty()) {
+          // Syntax-highlight the preview lines.
+          std::string preview_code;
+          for (int idx = 0; idx < kCollapsePreviewLines && idx < static_cast<int>(lines.size()); ++idx) {
+            if (idx > 0) { preview_code += "\n"; }
+            preview_code += lines[idx];
+          }
+          rendering::TreeSitterRenderer renderer(theme);
+          els.push_back(renderer.RenderCodeBlock(preview_code, lang));
+        } else {
+          std::string preview;
+          for (int idx = 0; idx < kCollapsePreviewLines && idx < static_cast<int>(lines.size()); ++idx) {
+            if (idx > 0) { preview += "\n"; }
+            preview += lines[idx];
+          }
+          els.push_back(paragraph(preview));
+        }
+        els.push_back(text("\u2026") | dim);
+        els.push_back(text("Click to expand") | dim);
+      }
+
+      // Cache the rendered element and register a clickable box for expand/collapse toggle.
+      auto el = vbox(std::move(els)) | border | color(Color::GrayLight) | xflex;
+      cached = {output.size(), el};
+      return el | reflect(state->chat.collapsible_boxes[cache_key]);
+    }
+
+    if (status != "completed") {
+      els.push_back(text("  Running...") | dim);
+    }
+
+    auto el = vbox(std::move(els)) | border | color(Color::GrayLight) | xflex;
+    cached = {output.size(), el};
+    return el;
   }
 
   auto RenderMessage(const opencode::MessageWithParts& msg) -> Element {
@@ -419,10 +651,8 @@ struct StageViewImpl {
     std::string icon;
     if (role == "user") {
       icon = "$ ";
-    } else if (role == "assistant") {
-      icon = "\u2726 ";
     } else {
-      icon = ". ";
+      icon = "  ";
     }
 
     Elements parts_elements;
@@ -456,6 +686,8 @@ struct StageViewImpl {
           part_el = vbox(std::move(block_els));
           cached = {content.size(), part_el};
         }
+      } else if (part_type == "tool") {
+        part_el = RenderToolPart(msg.info.id, pidx, part);
       } else if (part_type == "tool-call") {
         auto tool_name =
             (part.contains("name") && part["name"].is_string()) ? part["name"].get<std::string>() : std::string{"tool"};
@@ -468,19 +700,27 @@ struct StageViewImpl {
         part_el = paragraph(content);
       }
 
-      // Timestamp.
-      auto ts_key = msg.info.id + ":" + std::to_string(pidx);
-      Element timestamp_el = emptyElement();
-      if (state->chat.part_timestamps.count(ts_key) != 0) {
-        timestamp_el = text(FormatTimestamp(state->chat.part_timestamps[ts_key])) | dim;
-      }
+      // Tool parts take the full width — no icon prefix, filler, or timestamp.
+      if (part_type == "tool" || part_type == "tool-result") {
+        parts_elements.push_back(hbox({
+            text(icon) | dim,
+            part_el | flex,
+        }));
+      } else {
+        // Timestamp.
+        auto ts_key = msg.info.id + ":" + std::to_string(pidx);
+        Element timestamp_el = emptyElement();
+        if (state->chat.part_timestamps.count(ts_key) != 0) {
+          timestamp_el = text(FormatTimestamp(state->chat.part_timestamps[ts_key])) | dim;
+        }
 
-      parts_elements.push_back(hbox({
-          text(icon) | dim,
-          part_el | flex,
-          filler(),
-          timestamp_el,
-      }));
+        parts_elements.push_back(hbox({
+            text(icon) | dim,
+            part_el | flex,
+            filler(),
+            timestamp_el,
+        }));
+      }
     }
 
     // If no renderable parts, show empty message with icon.
@@ -862,6 +1102,26 @@ struct StageViewImpl {
       return true;
     }
 
+    // Click on collapsible tool parts to toggle expand/collapse.
+    if (event.is_mouse()) {
+      auto& mouse = event.mouse();
+      if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+        std::scoped_lock lock(state->mtx);
+        for (auto& [key, box] : state->chat.collapsible_boxes) {
+          if (mouse.x >= box.x_min && mouse.x <= box.x_max && mouse.y >= box.y_min && mouse.y <= box.y_max) {
+            if (state->chat.expanded_parts.count(key) > 0) {
+              state->chat.expanded_parts.erase(key);
+            } else {
+              state->chat.expanded_parts.insert(key);
+            }
+            state->chat.rendered_parts_cache.clear();
+            screen.PostEvent(Event::Custom);
+            return true;
+          }
+        }
+      }
+    }
+
     // Let mouse events through so the model button/menu can receive clicks.
     if (event.is_mouse()) {
       return false;
@@ -1166,11 +1426,39 @@ struct StageViewImpl {
       ApplyPartUpdated(state, evt.data);
       screen.PostEvent(Event::Custom);
     } else if (type == "message.created") {
-      auto sptr = state;
-      auto& ocs = ctx.opencode_state;
-      auto& ocm = ctx.opencode_mutex;
-      auto& scr = screen;
-      std::thread([sptr, &ocs, &ocm, &scr] -> void { RefreshMessages(sptr, ocs, ocm, scr); }).detach();
+      // Seed the message entry with role so subsequent deltas find it.
+      // Do NOT call RefreshMessages here — it races with streaming deltas
+      // and can discard in-flight content.
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      // Payload: properties.info = { id, role, sessionID }
+      auto info = props.value("info", nlohmann::json::object());
+      auto msg_id = info.value("id", "");
+      if (!msg_id.empty()) {
+        std::scoped_lock lock(state->mtx);
+        state->chat.is_loading = true;
+        auto& msg = GetOrCreateMessage(*state, msg_id);
+        // Carry over role and other metadata from the event.
+        if (info.contains("role")) {
+          msg.info.extra["role"] = info["role"];
+        }
+      }
+      screen.PostEvent(Event::Custom);
+    } else if (type == "message.updated") {
+      // Update message metadata (role, etc.) without touching parts.
+      // Payload: properties.info = { id, role, sessionID, ... }
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      auto info = props.value("info", nlohmann::json::object());
+      auto msg_id = info.value("id", "");
+      if (!msg_id.empty()) {
+        std::scoped_lock lock(state->mtx);
+        for (auto& msg : state->chat.messages) {
+          if (msg.info.id == msg_id) {
+            msg.info.extra = info;
+            break;
+          }
+        }
+      }
+      screen.PostEvent(Event::Custom);
     } else if (type == "session.idle" ||
                (type == "session.status" && evt.data.contains("status") && evt.data["status"].value("type", "") == "idle")) {
       auto sptr = state;
@@ -1187,7 +1475,7 @@ struct StageViewImpl {
       }).detach();
     }
     // Silently ignore: server.heartbeat, server.connected, session.updated,
-    // session.diff, message.updated
+    // session.diff
   }
 
   // -- Chat: send message -----------------------------------------------------
