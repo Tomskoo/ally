@@ -4,7 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <random>
+
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,27 +17,6 @@ namespace fs = std::filesystem;
 namespace ally::providers {
 
 namespace {
-
-constexpr int kHexMax = 15;
-constexpr int kVariantMin = 8;
-constexpr int kVariantMax = 11;
-
-auto generate_uuid() -> std::string {
-  static std::mt19937 gen{std::random_device{}()};
-  std::uniform_int_distribution<int> dist(0, kHexMax);
-  std::uniform_int_distribution<int> dist_variant(kVariantMin, kVariantMax);
-
-  const auto* hex = "0123456789abcdef";
-  std::string uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
-  for (auto& chr : uuid) {
-    if (chr == 'x') {
-      chr = hex[dist(gen)];
-    } else if (chr == 'y') {
-      chr = hex[dist_variant(gen)];
-    }
-  }
-  return uuid;
-}
 
 auto now_timestamp() -> std::string {
   auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -225,8 +204,25 @@ auto WorkflowService::create_workflow(const models::CreateWorkflowInput& input) 
 
   auto ids = generate_stage_ids(input.stages);
 
+  auto slug = commands::storage::slugify(input.name);
+  if (slug.empty()) {
+    return std::string("Workflow name produces an empty slug");
+  }
+
+  // Deduplicate slug against existing workflow directories
+  std::unordered_set<std::string> existing_ids;
+  for (const auto& workflow : workflows_) {
+    existing_ids.insert(workflow.id);
+  }
+  auto final_slug = slug;
+  int suffix = 1;
+  while (existing_ids.count(final_slug) > 0) {
+    final_slug = slug + "-" + std::to_string(suffix);
+    ++suffix;
+  }
+
   models::WorkflowDefinition def;
-  def.id = generate_uuid();
+  def.id = final_slug;
   def.name = input.name;
   def.description = input.description;
   def.created_at = now_timestamp();

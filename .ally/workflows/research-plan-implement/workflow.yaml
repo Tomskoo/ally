@@ -5,14 +5,14 @@ stages:
   - id: research
     name: Research
     description: Launch The Analyzers
-    starting_prompt: /research
+    starting_prompt: /research and write your findings to $research the following task:
     product: research-artifact.md
   - id: plan
     name: Plan
     description: Plan based on research
-    starting_prompt: /plan based on $research
+    starting_prompt: /plan using the research at $research and write your plan to $plan
     product: plan-artifact.md
   - id: implement
     name: Implement
     description: Implement based on plan
-    starting_prompt: /implement plan described in $plan
+    starting_prompt: /implement the plan described in $plan

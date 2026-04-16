@@ -7,7 +7,9 @@ You are tasked with creating detailed implementation plans through an interactiv
 When this command is invoked:
 
 1. **Check if parameters were provided**:
-   - If a file path or ticket reference was provided as a parameter, skip the default message
+   - When invoked from the RPI workflow, you will receive a research artifact path and an output plan path (e.g., `/plan using the research at <research-path> and write your plan to <plan-path>`)
+   - Extract both paths: read the research artifact, and write the final plan to the output path
+   - If a file path or task reference was provided as a parameter, skip the default message
    - Immediately read any provided files FULLY
    - Begin the research process
 
@@ -16,14 +18,13 @@ When this command is invoked:
 I'll help you create a detailed implementation plan. Let me start by understanding what we're building.
 
 Please provide:
-1. The task/ticket description (or reference to a ticket file)
+1. The task/ticket description (or reference to a task)
 2. Any relevant context, constraints, or specific requirements
 3. Links to related research or previous implementations
 
 I'll analyze this information and work with you to create a comprehensive plan.
 
-Tip: You can also invoke this command with a ticket file directly: `/create_plan thoughts/shared/tickets/eng_1234.md`
-For deeper analysis, try: `/create_plan think deeply about thoughts/shared/tickets/eng_1234.md`
+Tip: You can also invoke this command with a task artifact directly: `/plan .ally/tasks/<task-name>/threads/<thread-name>/stages/research/artifact.md`
 ```
 
 Then wait for the user's input.
@@ -33,8 +34,8 @@ Then wait for the user's input.
 ### Step 1: Context Gathering & Initial Analysis
 
 1. **Read all mentioned files immediately and FULLY**:
-   - Ticket files (e.g., `thoughts/shared/tickets/eng_1234.md`)
-   - Research documents
+   - Task artifacts (e.g., `.ally/tasks/<task>/threads/<thread>/stages/<stage>/artifact.md`)
+   - Research artifacts from previous stages
    - Related implementation plans
    - Any JSON/data files mentioned
    - **IMPORTANT**: Use the Read tool WITHOUT limit/offset parameters to read entire files
@@ -159,14 +160,8 @@ Once aligned on approach:
 
 After structure approval:
 
-1. **Write the plan** to `thoughts/shared/plans/YYYY-MM-DD-ENG-XXXX-description.md`
-   - Format: `YYYY-MM-DD-ENG-XXXX-description.md` where:
-     - YYYY-MM-DD is today's date
-     - ENG-XXXX is the ticket number (omit if no ticket)
-     - description is a brief kebab-case description
-   - Examples:
-     - With ticket: `2025-01-08-ENG-1478-parent-child-tracking.md`
-     - Without ticket: `2025-01-08-improve-error-handling.md`
+1. **Write the plan** to the artifact path provided in the invocation (the resolved `$plan` path from the workflow).
+   - If no output path was provided, ask the user where to write the plan.
 2. **Use this template structure**:
 
 ````markdown
@@ -261,8 +256,7 @@ After structure approval:
 
 ## References
 
-- Original ticket: `thoughts/shared/tickets/eng_XXXX.md`
-- Related research: `thoughts/shared/research/[relevant].md`
+- Research artifact: `.ally/tasks/<task>/threads/<thread>/stages/research/artifact.md`
 - Similar implementation: `[file:line]`
 ````
 
@@ -271,7 +265,7 @@ After structure approval:
 1. **Present the draft plan location**:
    ```
    I've created the initial implementation plan at:
-   `thoughts/shared/plans/YYYY-MM-DD-ENG-XXXX-description.md`
+   `[artifact path]`
 
    Please review it and let me know:
    - Are the phases properly scoped?
@@ -420,11 +414,11 @@ tasks = [
 ## Example Interaction Flow
 
 ```
-User: /create_plan
+User: /plan
 Assistant: I'll help you create a detailed implementation plan...
 
-User: We need to add parent-child tracking for Claude sub-tasks. See thoughts/shared/tickets/eng_1478.md
-Assistant: Let me read that ticket file completely first...
+User: We need to add parent-child tracking for Claude sub-tasks. See .ally/tasks/parent-child-tracking/threads/main/stages/research/artifact.md
+Assistant: Let me read that research artifact completely first...
 
 [Reads file fully]
 

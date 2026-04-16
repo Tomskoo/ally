@@ -1,6 +1,6 @@
 name: Sample Thread
 current_stage: design
-workflow_id: 554623d9-84bd-4214-b2d7-ff8488c34f4f
+workflow_id: default-workflow
 created_at: 1774830648
 last_activity: 1774830648
 status: idle

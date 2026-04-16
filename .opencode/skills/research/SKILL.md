@@ -13,7 +13,9 @@ You are tasked with conducting comprehensive research across the codebase to ans
 
 ## Initial Setup:
 
-When this command is invoked, respond with:
+When this command is invoked, it will include an artifact path to write findings to (e.g., `/research and write your findings to <path> the following task:`). Extract and remember this output path — you will write your final research document there.
+
+If a research question or task description is included in the invocation, proceed directly. Otherwise, respond with:
 ```
 I'm ready to research the codebase. Please provide your research question or area of interest, and I'll analyze it thoroughly by exploring relevant components and connections.
 ```
@@ -72,18 +74,12 @@ Then wait for the user's research query.
    - Answer the user's specific questions with concrete evidence
 
 5. **Gather metadata for the research document:**
-   - Run Bash() tools to generate all relevant metadata
-   - Filename: `thoughts/shared/research/YYYY-MM-DD-ENG-XXXX-description.md`
-     - Format: `YYYY-MM-DD-ENG-XXXX-description.md` where:
-       - YYYY-MM-DD is today's date
-       - ENG-XXXX is the ticket number (omit if no ticket)
-       - description is a brief kebab-case description of the research topic
-     - Examples:
-       - With ticket: `2025-01-08-ENG-1478-parent-child-tracking.md`
-       - Without ticket: `2025-01-08-authentication-flow.md`
+   - Run Bash() tools to generate all relevant metadata (git commit, branch, date, etc.)
+   - The output path was provided when the skill was invoked — use that path to write the artifact
 
 6. **Generate research document:**
-   - Use the metadata gathered in step 4
+   - Write the document to the artifact path provided in the invocation
+   - Use the metadata gathered in step 5
    - Structure the document with YAML frontmatter followed by content:
      ```markdown
      ---
@@ -131,7 +127,7 @@ Then wait for the user's research query.
      [Current patterns, conventions, and design implementations found in the codebase]
 
      ## Related Research
-     [Links to other research documents in thoughts/shared/research/]
+     [Links to other relevant task artifacts or research documents]
 
      ## Open Questions
      [Any areas that need further investigation]
@@ -176,6 +172,7 @@ Then wait for the user's research query.
   - ALWAYS read mentioned files first before spawning sub-tasks (step 1)
   - ALWAYS wait for all sub-agents to complete before synthesizing (step 4)
   - ALWAYS gather metadata before writing the document (step 5 before step 6)
+  - ALWAYS write the research document to the artifact path provided in the invocation
   - NEVER write the research document with placeholder values
 - **Frontmatter consistency**:
   - Always include frontmatter at the beginning of research documents
