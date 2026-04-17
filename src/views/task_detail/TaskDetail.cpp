@@ -17,7 +17,6 @@ using namespace ftxui;
 
 namespace {
 
-constexpr int kColName = 28;
 constexpr int kColStatus = 14;
 constexpr int kColStage = 14;
 constexpr int kColActivity = 16;
@@ -132,15 +131,18 @@ auto task_detail(AppContext& ctx, Navigator& nav, const std::string& task_id) ->
                                                    : (text(t_stage) | size(WIDTH, EQUAL, kColStage));
 
         auto row = hbox({
-            text(t_name) | size(WIDTH, EQUAL, kColName),
+            text(t_name) | flex,
+            text("  "),
             text(status_label(t_status)) | color(status_color(t_status)) | size(WIDTH, EQUAL, kColStatus),
+            text("  "),
             stage_el,
+            text("  "),
             text(ally::utils::format_relative(t_activity)) | size(WIDTH, EQUAL, kColActivity),
         });
         if (e.focused) {
-          return row | inverted;
+          return row | flex | inverted;
         }
-        return row;
+        return row | flex;
       };
 
       auto row_btn = Button("", [&nav, task_id, tid, t_stage] -> void { nav.go(StageViewState{task_id, tid, t_stage}); }, row_opt);
@@ -230,10 +232,14 @@ auto task_detail(AppContext& ctx, Navigator& nav, const std::string& task_id) ->
 
     // Thread table
     auto table_header = hbox({
-        text("Name") | size(WIDTH, EQUAL, kColName) | bold,
+        text("Name") | bold | flex,
+        text("  "),
         text("Status") | size(WIDTH, EQUAL, kColStatus) | bold,
+        text("  "),
         text("Stage") | size(WIDTH, EQUAL, kColStage) | bold,
+        text("  "),
         text("Last Activity") | size(WIDTH, EQUAL, kColActivity) | bold,
+        text("  "),
         text("") | size(WIDTH, EQUAL, kColAction),
     });
 

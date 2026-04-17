@@ -17,7 +17,6 @@ namespace ally::views {
 
 namespace {
 
-constexpr int kNameWidth = 40;
 constexpr int kStageWidth = 14;
 constexpr int kDateWidth = 14;
 constexpr int kActivityWidth = 14;
@@ -42,9 +41,12 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
     }
     const auto& task = (*tasks)[state.index];
     auto row = hbox({
-        text(task.name) | size(WIDTH, EQUAL, kNameWidth),
+        text(task.name) | flex,
+        text("  "),
         ally::style::colour::render_stage_badge(task.stage) | size(WIDTH, EQUAL, kStageWidth),
+        text("  "),
         text(ally::utils::format_date(task.created_at)) | size(WIDTH, EQUAL, kDateWidth),
+        text("  "),
         text(ally::utils::format_relative(task.last_activity)) | size(WIDTH, EQUAL, kActivityWidth),
     });
     if (state.focused) {
@@ -81,9 +83,12 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
     });
 
     auto table_header = hbox({
-        text("Task Name") | size(WIDTH, EQUAL, kNameWidth) | bold,
+        text("Task Name") | bold | flex,
+        text("  "),
         text("Stage") | size(WIDTH, EQUAL, kStageWidth) | bold,
+        text("  "),
         text("Created On") | size(WIDTH, EQUAL, kDateWidth) | bold,
+        text("  "),
         text("Last Activity") | size(WIDTH, EQUAL, kActivityWidth) | bold,
     });
 
