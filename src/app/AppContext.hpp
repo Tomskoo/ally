@@ -41,7 +41,7 @@ struct AppContext {
 
   // Watcher broadcast channels
   watcher::WatcherBroadcast<watcher::ArtifactChangedEvent> artifact_broadcast;
-  watcher::WatcherBroadcast<watcher::SkillsChangedEvent> skills_broadcast;
+  watcher::WatcherBroadcast<watcher::CommandsChangedEvent> commands_broadcast;
 
   static constexpr size_t kMaxRecentTasks = 5;
 

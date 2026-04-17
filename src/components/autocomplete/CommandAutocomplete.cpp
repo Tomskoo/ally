@@ -1,4 +1,4 @@
-#include "src/components/autocomplete/SkillAutocomplete.hpp"
+#include "src/components/autocomplete/CommandAutocomplete.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -13,10 +13,10 @@
 namespace ally::autocomplete {
 
 // ---------------------------------------------------------------------------
-// CheckSkillTrigger
+// CheckCommandTrigger
 // ---------------------------------------------------------------------------
 
-void CheckSkillTrigger(SkillAutocompleteState& state, const std::string& text, int cursor_pos) {
+void CheckCommandTrigger(CommandAutocompleteState& state, const std::string& text, int cursor_pos) {
   // Clamp cursor_pos.
   cursor_pos = std::max(cursor_pos, 0);
   cursor_pos = std::min(cursor_pos, static_cast<int>(text.size()));
@@ -67,13 +67,13 @@ void CheckSkillTrigger(SkillAutocompleteState& state, const std::string& text, i
 }
 
 // ---------------------------------------------------------------------------
-// GetFilteredSkills
+// GetFilteredCommands
 // ---------------------------------------------------------------------------
 
-auto GetFilteredSkills(const std::vector<SkillEntry>& skills_cache, std::string_view query) -> std::vector<const SkillEntry*> {
-  std::vector<const SkillEntry*> result;
-  for (const auto& entry : skills_cache) {
-    if (DefaultMatchStrategy(query, entry.dir_name) || DefaultMatchStrategy(query, entry.name)) {
+auto GetFilteredCommands(const std::vector<CommandEntry>& commands_cache, std::string_view query) -> std::vector<const CommandEntry*> {
+  std::vector<const CommandEntry*> result;
+  for (const auto& entry : commands_cache) {
+    if (DefaultMatchStrategy(query, entry.name) || DefaultMatchStrategy(query, entry.description)) {
       result.push_back(&entry);
     }
   }
@@ -81,15 +81,15 @@ auto GetFilteredSkills(const std::vector<SkillEntry>& skills_cache, std::string_
 }
 
 // ---------------------------------------------------------------------------
-// SelectCurrentSkill
+// SelectCurrentCommand
 // ---------------------------------------------------------------------------
 
-void SelectCurrentSkill(SkillAutocompleteState& state, const std::string& current_text, std::string& text_out) {
-  if (!state.skills_cache.has_value() || !state.trigger_position.has_value()) {
+void SelectCurrentCommand(CommandAutocompleteState& state, const std::string& current_text, std::string& text_out) {
+  if (!state.commands_cache.has_value() || !state.trigger_position.has_value()) {
     return;
   }
 
-  auto filtered = GetFilteredSkills(*state.skills_cache, state.query);
+  auto filtered = GetFilteredCommands(*state.commands_cache, state.query);
   if (filtered.empty() || state.selected_index < 0 || state.selected_index >= static_cast<int>(filtered.size())) {
     return;
   }
@@ -98,7 +98,7 @@ void SelectCurrentSkill(SkillAutocompleteState& state, const std::string& curren
   int trigger_pos = *state.trigger_position;
   int cursor_pos = trigger_pos + 1 + static_cast<int>(state.query.size());
 
-  std::string replacement = "/" + entry->dir_name;
+  std::string replacement = "/" + entry->name;
   text_out = current_text.substr(0, trigger_pos) + replacement + " " + current_text.substr(cursor_pos);
 
   state.is_open = false;
@@ -106,20 +106,20 @@ void SelectCurrentSkill(SkillAutocompleteState& state, const std::string& curren
 }
 
 // ---------------------------------------------------------------------------
-// HandleSkillKeydown
+// HandleCommandKeydown
 // ---------------------------------------------------------------------------
 
-auto HandleSkillKeydown(SkillAutocompleteState& state, const std::string& current_text, std::string& text_out,
-                        const ftxui::Event& event) -> bool {
+auto HandleCommandKeydown(CommandAutocompleteState& state, const std::string& current_text, std::string& text_out,
+                          const ftxui::Event& event) -> bool {
   if (!state.is_open) {
     return false;
   }
 
-  if (!state.skills_cache.has_value()) {
+  if (!state.commands_cache.has_value()) {
     return false;
   }
 
-  auto filtered = GetFilteredSkills(*state.skills_cache, state.query);
+  auto filtered = GetFilteredCommands(*state.commands_cache, state.query);
   int item_count = static_cast<int>(filtered.size());
 
   if (event == ftxui::Event::ArrowDown) {
@@ -143,7 +143,7 @@ auto HandleSkillKeydown(SkillAutocompleteState& state, const std::string& curren
   }
 
   if (event == ftxui::Event::Return || event == ftxui::Event::Tab) {
-    SelectCurrentSkill(state, current_text, text_out);
+    SelectCurrentCommand(state, current_text, text_out);
     return true;
   }
 
@@ -151,22 +151,22 @@ auto HandleSkillKeydown(SkillAutocompleteState& state, const std::string& curren
 }
 
 // ---------------------------------------------------------------------------
-// SkillAutocompleteComponent
+// CommandAutocompleteComponent
 // ---------------------------------------------------------------------------
 
-auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& state, ftxui::ScreenInteractive& screen,
-                                std::function<void(const std::string& new_text)> on_insert) -> ftxui::Component {
+auto CommandAutocompleteComponent(const std::shared_ptr<CommandAutocompleteState>& state, ftxui::ScreenInteractive& screen,
+                                  std::function<void(const std::string& new_text)> on_insert) -> ftxui::Component {
   using namespace ftxui;
 
   auto component = Renderer([state]() -> Element {
     std::scoped_lock lock(state->mutex);
 
-    if (!state->is_open || !state->skills_cache.has_value()) {
+    if (!state->is_open || !state->commands_cache.has_value()) {
       return text("");
     }
 
-    auto& cache = *state->skills_cache;
-    auto filtered = GetFilteredSkills(cache, state->query);
+    auto& cache = *state->commands_cache;
+    auto filtered = GetFilteredCommands(cache, state->query);
 
     // Clamp selected_index.
     int item_count = static_cast<int>(filtered.size());
@@ -177,7 +177,7 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
     }
 
     if (filtered.empty()) {
-      auto empty_row = text("No skills found") | dim | center;
+      auto empty_row = text("No commands found") | dim | center;
       return vbox({empty_row}) | vscroll_indicator | yframe | xflex | size(HEIGHT, LESS_THAN, 10) | border;
     }
 
@@ -209,16 +209,14 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
   component = CatchEvent(component, [state, on_insert = std::move(on_insert)](Event event) -> bool {
     std::scoped_lock lock(state->mutex);
 
-    if (!state->is_open || !state->skills_cache.has_value()) {
+    if (!state->is_open || !state->commands_cache.has_value()) {
       return false;
     }
 
     // Mouse hover: update selected_index to hovered row.
     if (event.is_mouse() && event.mouse().motion == Mouse::Moved) {
-      // Mouse events within the overlay update selection.
-      // The y coordinate relative to the overlay start gives the row.
       int row = event.mouse().y;
-      auto filtered = GetFilteredSkills(*state->skills_cache, state->query);
+      auto filtered = GetFilteredCommands(*state->commands_cache, state->query);
       if (row >= 0 && row < static_cast<int>(filtered.size())) {
         state->selected_index = row;
       }
@@ -228,23 +226,13 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
     // Mouse click: select the clicked row.
     if (event.is_mouse() && event.mouse().button == Mouse::Left && event.mouse().motion == Mouse::Released) {
       int row = event.mouse().y;
-      auto filtered = GetFilteredSkills(*state->skills_cache, state->query);
+      auto filtered = GetFilteredCommands(*state->commands_cache, state->query);
       if (row >= 0 && row < static_cast<int>(filtered.size())) {
         state->selected_index = row;
-        // Build the text with the selection.
-        // We need to provide a dummy current_text — the caller
-        // will receive the new_text via on_insert.
-        // However, we don't have access to the current text here.
-        // So we signal via on_insert with an empty string; the
-        // keyboard path handles this differently.
       }
       return false;
     }
 
-    // Keyboard: need current_text for SelectCurrentSkill.
-    // The CatchEvent handler doesn't have direct access to the text
-    // buffer, so keyboard events are handled by the caller through
-    // HandleSkillKeydown before reaching this component.
     return false;
   });
 
@@ -252,16 +240,16 @@ auto SkillAutocompleteComponent(const std::shared_ptr<SkillAutocompleteState>& s
 }
 
 // ---------------------------------------------------------------------------
-// SetupSkillsListener
+// SetupCommandsListener
 // ---------------------------------------------------------------------------
 
-void SetupSkillsListener(const std::shared_ptr<SkillAutocompleteState>& state, ally::services::SkillService& service,
-                         watcher::WatcherBroadcast<watcher::SkillsChangedEvent>& broadcast, ftxui::ScreenInteractive& screen) {
+void SetupCommandsListener(const std::shared_ptr<CommandAutocompleteState>& state, ally::services::CommandService& service,
+                           watcher::WatcherBroadcast<watcher::CommandsChangedEvent>& broadcast, ftxui::ScreenInteractive& screen) {
   std::thread([state, &service, &broadcast, &screen]() -> void {
     // Initial one-shot load
-    service.ListSkills([state, &screen](std::vector<SkillEntry> skills) -> void {
+    service.ListCommands([state, &screen](std::vector<CommandEntry> commands) -> void {
       std::scoped_lock lock(state->mutex);
-      state->skills_cache = std::move(skills);
+      state->commands_cache = std::move(commands);
       screen.PostEvent(ftxui::Event::Custom);
     });
 
@@ -271,10 +259,10 @@ void SetupSkillsListener(const std::shared_ptr<SkillAutocompleteState>& state, a
     while (!state->listener_stop.load()) {
       auto events = queue->drain();
       if (!events.empty()) {
-        // Any skills change triggers a full re-fetch
-        service.ListSkills([state, &screen](std::vector<SkillEntry> skills) -> void {
+        // Any commands change triggers a full re-fetch
+        service.ListCommands([state, &screen](std::vector<CommandEntry> commands) -> void {
           std::scoped_lock lock(state->mutex);
-          state->skills_cache = std::move(skills);
+          state->commands_cache = std::move(commands);
           screen.PostEvent(ftxui::Event::Custom);
         });
       }

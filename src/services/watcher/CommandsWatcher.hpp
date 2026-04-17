@@ -12,13 +12,13 @@
 
 namespace ally::watcher {
 
-class SkillsWatcher : public efsw::FileWatchListener {
+class CommandsWatcher : public efsw::FileWatchListener {
  public:
-  SkillsWatcher(std::filesystem::path project_root, WatcherBroadcast<SkillsChangedEvent>& broadcast);
-  ~SkillsWatcher() override;
+  CommandsWatcher(std::filesystem::path project_root, WatcherBroadcast<CommandsChangedEvent>& broadcast);
+  ~CommandsWatcher() override;
 
-  SkillsWatcher(const SkillsWatcher&) = delete;
-  auto operator=(const SkillsWatcher&) -> SkillsWatcher& = delete;
+  CommandsWatcher(const CommandsWatcher&) = delete;
+  auto operator=(const CommandsWatcher&) -> CommandsWatcher& = delete;
 
  private:
   void handleFileAction(efsw::WatchID watchid, const std::string& dir, const std::string& filename, efsw::Action action,
@@ -27,7 +27,7 @@ class SkillsWatcher : public efsw::FileWatchListener {
   void Run();
 
   std::filesystem::path project_root_;
-  WatcherBroadcast<SkillsChangedEvent>& broadcast_;
+  WatcherBroadcast<CommandsChangedEvent>& broadcast_;
 
   std::mutex pending_mutex_;
   bool has_pending_{false};

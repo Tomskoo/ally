@@ -28,9 +28,9 @@ cc_library(
 )
 
 cc_library(
-    name = "skills_watcher",
-    srcs = ["SkillsWatcher.cpp"],
-    hdrs = ["SkillsWatcher.hpp"],
+    name = "commands_watcher",
+    srcs = ["CommandsWatcher.cpp"],
+    hdrs = ["CommandsWatcher.hpp"],
     visibility = ["//visibility:public"],
     deps = [
         ":watcher_events",

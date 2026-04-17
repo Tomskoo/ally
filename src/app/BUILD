@@ -60,7 +60,7 @@ cc_binary(
         "//src/views/task_detail",
         "//src/views/workflow_form",
         "//src/services/watcher:artifact_watcher",
-        "//src/services/watcher:skills_watcher",
+        "//src/services/watcher:commands_watcher",
         "//src/views/stage_view",
         "//src/views/workflow_list",
         "@ftxui//:component",

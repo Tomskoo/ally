@@ -20,14 +20,14 @@
 #include "src/components/autocomplete/ArtifactAutocomplete.hpp"
 #include "src/components/autocomplete/ArtifactTypes.hpp"
 #include "src/components/autocomplete/FileAutocomplete.hpp"
-#include "src/components/autocomplete/SkillAutocomplete.hpp"
-#include "src/components/autocomplete/SkillTypes.hpp"
+#include "src/components/autocomplete/CommandAutocomplete.hpp"
+#include "src/components/autocomplete/CommandTypes.hpp"
 #include "src/components/autocomplete/Types.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
 #include "src/opencode/Service.hpp"
 #include "src/rendering/HighlightTheme.hpp"
 #include "src/rendering/TreeSitterRenderer.hpp"
-#include "src/services/SkillService.hpp"
+#include "src/services/CommandService.hpp"
 #include "src/utils/time_format.hpp"
 
 using namespace ftxui;
@@ -352,7 +352,7 @@ struct StageViewImpl {
   int cursor_pos = 0;
 
   // Autocomplete state
-  std::shared_ptr<autocomplete::SkillAutocompleteState> skill_ac_state = std::make_shared<autocomplete::SkillAutocompleteState>();
+  std::shared_ptr<autocomplete::CommandAutocompleteState> command_ac_state = std::make_shared<autocomplete::CommandAutocompleteState>();
   std::shared_ptr<autocomplete::ArtifactAutocompleteState> artifact_ac_state =
       std::make_shared<autocomplete::ArtifactAutocompleteState>();
   std::shared_ptr<autocomplete::AutocompleteState> file_ac_state = std::make_shared<autocomplete::AutocompleteState>();
@@ -363,7 +363,7 @@ struct StageViewImpl {
   Component file_ac_component;
 
   // Skill service (must outlive the skills listener thread)
-  std::shared_ptr<services::SkillService> skill_service;
+  std::shared_ptr<services::CommandService> command_service;
 
   // Model selector components
   Component model_button;
@@ -375,7 +375,7 @@ struct StageViewImpl {
 
   ~StageViewImpl() {
     stop.store(true, std::memory_order_relaxed);
-    skill_ac_state->listener_stop.store(true, std::memory_order_relaxed);
+    command_ac_state->listener_stop.store(true, std::memory_order_relaxed);
     artifact_ac_state->listener_stop.store(true, std::memory_order_relaxed);
     if (artifact_event_thread.joinable()) {
       artifact_event_thread.join();
@@ -1196,8 +1196,8 @@ struct StageViewImpl {
   auto HandleInsertEvent(Event& event) -> bool {
     // Escape: close any open autocomplete overlay first, or exit insert mode.
     if (event == Event::Escape) {
-      if (skill_ac_state->is_open || artifact_ac_state->is_open || file_ac_state->is_open) {
-        skill_ac_state->is_open = false;
+      if (command_ac_state->is_open || artifact_ac_state->is_open || file_ac_state->is_open) {
+        command_ac_state->is_open = false;
         artifact_ac_state->is_open = false;
         file_ac_state->is_open = false;
         screen.PostEvent(Event::Custom);
@@ -1220,11 +1220,11 @@ struct StageViewImpl {
     }
 
     // Route events through autocomplete handlers when overlay is open.
-    if (skill_ac_state->is_open) {
-      std::scoped_lock lock(skill_ac_state->mutex);
-      auto trigger = skill_ac_state->trigger_position;
+    if (command_ac_state->is_open) {
+      std::scoped_lock lock(command_ac_state->mutex);
+      auto trigger = command_ac_state->trigger_position;
       std::string new_text;
-      if (autocomplete::HandleSkillKeydown(*skill_ac_state, input_text, new_text, event)) {
+      if (autocomplete::HandleCommandKeydown(*command_ac_state, input_text, new_text, event)) {
         if (!new_text.empty() && trigger.has_value()) {
           input_text = new_text;
           auto space_pos = new_text.find(' ', *trigger);
@@ -1699,8 +1699,8 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
   input_opts.on_change = [impl] -> void {
     // Check all three autocomplete triggers on every text change.
     {
-      std::scoped_lock lock(impl->skill_ac_state->mutex);
-      autocomplete::CheckSkillTrigger(*impl->skill_ac_state, impl->input_text, impl->cursor_pos);
+      std::scoped_lock lock(impl->command_ac_state->mutex);
+      autocomplete::CheckCommandTrigger(*impl->command_ac_state, impl->input_text, impl->cursor_pos);
     }
     {
       std::scoped_lock lock(impl->artifact_ac_state->mutex);
@@ -1728,8 +1728,8 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
 
   // Skill autocomplete: on_insert callback for mouse-based selection.
   impl->skill_ac_component =
-      autocomplete::SkillAutocompleteComponent(impl->skill_ac_state, screen, [impl](const std::string& new_text) -> void {
-        auto trigger = impl->skill_ac_state->trigger_position;
+      autocomplete::CommandAutocompleteComponent(impl->command_ac_state, screen, [impl](const std::string& new_text) -> void {
+        auto trigger = impl->command_ac_state->trigger_position;
         if (!new_text.empty() && trigger.has_value()) {
           impl->input_text = new_text;
           auto space_pos = new_text.find(' ', *trigger);
@@ -1768,8 +1768,8 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
   // -- Background listeners ---------------------------------------------------
 
   // Skill listener
-  impl->skill_service = std::make_shared<services::SkillService>(ctx.project_root.string());
-  autocomplete::SetupSkillsListener(impl->skill_ac_state, *impl->skill_service, ctx.skills_broadcast, screen);
+  impl->command_service = std::make_shared<services::CommandService>(ctx.project_root.string());
+  autocomplete::SetupCommandsListener(impl->command_ac_state, *impl->command_service, ctx.commands_broadcast, screen);
 
   // Artifact listener
   autocomplete::SetupArtifactsListener(impl->artifact_ac_state, ctx.project_root.string(), task_id, thread_id,

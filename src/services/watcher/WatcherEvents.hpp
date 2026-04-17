@@ -13,7 +13,7 @@ struct ArtifactChangedEvent {
   std::string stage;
 };
 
-struct SkillsChangedEvent {
+struct CommandsChangedEvent {
   // No payload fields. Consumers treat any instance as a full cache invalidation.
 };
 

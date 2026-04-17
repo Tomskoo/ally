@@ -1,16 +1,23 @@
+---
+description: Create detailed implementation plans
+---
+
 # Implementation Plan
 
 You are tasked with creating detailed implementation plans through an interactive, iterative process. You should be skeptical, thorough, and work collaboratively with the user to produce high-quality technical specifications.
+
+**Input research artifact**: `$1`
+**Output plan artifact**: `$2`
+
+Read the research artifact at `$1` and write the final plan to `$2`.
 
 ## Initial Response
 
 When this command is invoked:
 
 1. **Check if parameters were provided**:
-   - When invoked from the RPI workflow, you will receive a research artifact path and an output plan path (e.g., `/plan using the research at <research-path> and write your plan to <plan-path>`)
-   - Extract both paths: read the research artifact, and write the final plan to the output path
-   - If a file path or task reference was provided as a parameter, skip the default message
-   - Immediately read any provided files FULLY
+   - If `$1` is provided, read the research artifact FULLY and begin planning
+   - If additional context is provided after the arguments, incorporate it
    - Begin the research process
 
 2. **If no parameters provided**, respond with:
@@ -24,7 +31,7 @@ Please provide:
 
 I'll analyze this information and work with you to create a comprehensive plan.
 
-Tip: You can also invoke this command with a task artifact directly: `/plan .ally/tasks/<task-name>/threads/<thread-name>/stages/research/artifact.md`
+Tip: You can also invoke this command with a research artifact directly: `/plan <research-artifact-path> <output-plan-path>`
 ```
 
 Then wait for the user's input.
@@ -34,8 +41,8 @@ Then wait for the user's input.
 ### Step 1: Context Gathering & Initial Analysis
 
 1. **Read all mentioned files immediately and FULLY**:
+   - Research artifact at `$1` (if provided)
    - Task artifacts (e.g., `.ally/tasks/<task>/threads/<thread>/stages/<stage>/artifact.md`)
-   - Research artifacts from previous stages
    - Related implementation plans
    - Any JSON/data files mentioned
    - **IMPORTANT**: Use the Read tool WITHOUT limit/offset parameters to read entire files
@@ -160,8 +167,7 @@ Once aligned on approach:
 
 After structure approval:
 
-1. **Write the plan** to the artifact path provided in the invocation (the resolved `$plan` path from the workflow).
-   - If no output path was provided, ask the user where to write the plan.
+1. **Write the plan** to `$2` (the output plan artifact path).
 2. **Use this template structure**:
 
 ````markdown
@@ -256,7 +262,7 @@ After structure approval:
 
 ## References
 
-- Research artifact: `.ally/tasks/<task>/threads/<thread>/stages/research/artifact.md`
+- Research artifact: `$1`
 - Similar implementation: `[file:line]`
 ````
 
@@ -265,7 +271,7 @@ After structure approval:
 1. **Present the draft plan location**:
    ```
    I've created the initial implementation plan at:
-   `[artifact path]`
+   `$2`
 
    Please review it and let me know:
    - Are the phases properly scoped?
@@ -417,8 +423,8 @@ tasks = [
 User: /plan
 Assistant: I'll help you create a detailed implementation plan...
 
-User: We need to add parent-child tracking for Claude sub-tasks. See .ally/tasks/parent-child-tracking/threads/main/stages/research/artifact.md
-Assistant: Let me read that research artifact completely first...
+User: /plan .ally/tasks/parent-child/threads/main/stages/research/artifact.md .ally/tasks/parent-child/threads/main/stages/plan/artifact.md
+Assistant: Let me read the research artifact completely first...
 
 [Reads file fully]
 

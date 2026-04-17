@@ -1,6 +1,13 @@
+---
+description: Research codebase to answer questions
+---
+
 # Research Codebase
 
 You are tasked with conducting comprehensive research across the codebase to answer user questions by spawning parallel sub-agents and synthesizing their findings.
+
+**Output artifact path**: `$1`
+Write your final research document to this path.
 
 ## CRITICAL: YOUR ONLY JOB IS TO DOCUMENT AND EXPLAIN THE CODEBASE AS IT EXISTS TODAY
 - DO NOT suggest improvements or changes unless the user explicitly asks for them
@@ -12,8 +19,6 @@ You are tasked with conducting comprehensive research across the codebase to ans
 - You are creating a technical map/documentation of the existing system
 
 ## Initial Setup:
-
-When this command is invoked, it will include an artifact path to write findings to (e.g., `/research and write your findings to <path> the following task:`). Extract and remember this output path — you will write your final research document there.
 
 If a research question or task description is included in the invocation, proceed directly. Otherwise, respond with:
 ```
@@ -75,10 +80,9 @@ Then wait for the user's research query.
 
 5. **Gather metadata for the research document:**
    - Run Bash() tools to generate all relevant metadata (git commit, branch, date, etc.)
-   - The output path was provided when the skill was invoked — use that path to write the artifact
 
 6. **Generate research document:**
-   - Write the document to the artifact path provided in the invocation
+   - Write the document to `$1`
    - Use the metadata gathered in step 5
    - Structure the document with YAML frontmatter followed by content:
      ```markdown
@@ -172,7 +176,7 @@ Then wait for the user's research query.
   - ALWAYS read mentioned files first before spawning sub-tasks (step 1)
   - ALWAYS wait for all sub-agents to complete before synthesizing (step 4)
   - ALWAYS gather metadata before writing the document (step 5 before step 6)
-  - ALWAYS write the research document to the artifact path provided in the invocation
+  - ALWAYS write the research document to `$1`
   - NEVER write the research document with placeholder values
 - **Frontmatter consistency**:
   - Always include frontmatter at the beginning of research documents

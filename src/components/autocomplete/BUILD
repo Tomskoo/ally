@@ -7,8 +7,8 @@ cc_library(
 )
 
 cc_library(
-    name = "skill_types",
-    hdrs = ["SkillTypes.hpp"],
+    name = "command_types",
+    hdrs = ["CommandTypes.hpp"],
     visibility = ["//visibility:public"],
 )
 
@@ -36,14 +36,14 @@ cc_library(
 )
 
 cc_library(
-    name = "skill_autocomplete",
-    srcs = ["SkillAutocomplete.cpp"],
-    hdrs = ["SkillAutocomplete.hpp"],
+    name = "command_autocomplete",
+    srcs = ["CommandAutocomplete.cpp"],
+    hdrs = ["CommandAutocomplete.hpp"],
     visibility = ["//visibility:public"],
     deps = [
+        ":command_types",
         ":file_autocomplete",
-        ":skill_types",
-        "//src/services:skill_service",
+        "//src/services:command_service",
         "//src/services/watcher:watcher_events",
         "//src/services/watcher:watcher_queues",
         "@ftxui//:component",

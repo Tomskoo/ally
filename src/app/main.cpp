@@ -27,7 +27,7 @@
 #include "src/opencode/Sse.hpp"
 #include "src/providers/artifact/ArtifactService.hpp"
 #include "src/services/watcher/ArtifactWatcher.hpp"
-#include "src/services/watcher/SkillsWatcher.hpp"
+#include "src/services/watcher/CommandsWatcher.hpp"
 #include "src/views/board/Board.hpp"
 #include "src/views/create_task/CreateTask.hpp"
 #include "src/views/create_thread/CreateThread.hpp"
@@ -320,7 +320,7 @@ auto main(int argc, char* argv[]) -> int {
 
     // Start filesystem watchers
     auto artifact_watcher = std::make_unique<ally::watcher::ArtifactWatcher>(project_root, ctx.artifact_broadcast);
-    auto skills_watcher = std::make_unique<ally::watcher::SkillsWatcher>(project_root, ctx.skills_broadcast);
+    auto commands_watcher = std::make_unique<ally::watcher::CommandsWatcher>(project_root, ctx.commands_broadcast);
 
     auto active_component = std::make_shared<Component>();
 

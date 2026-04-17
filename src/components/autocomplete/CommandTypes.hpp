@@ -8,18 +8,17 @@
 
 namespace ally::autocomplete {
 
-struct SkillEntry {
-  std::string name;         // human-readable display name (from YAML frontmatter)
-  std::string dir_name;     // directory name under .opencode/skills/
-  std::string description;  // optional one-line description (may be empty)
+struct CommandEntry {
+  std::string name;         // filename stem (e.g., "research") — used for display and insertion
+  std::string description;  // from YAML frontmatter (may be empty)
 };
 
-struct SkillAutocompleteState {
+struct CommandAutocompleteState {
   bool is_open = false;
   std::string query;
   std::optional<int> trigger_position;
   int selected_index = 0;
-  std::optional<std::vector<SkillEntry>> skills_cache;
+  std::optional<std::vector<CommandEntry>> commands_cache;
   std::mutex mutex;
 
   // Used to signal the watcher listener thread to stop

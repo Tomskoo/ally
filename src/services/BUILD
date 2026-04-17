@@ -1,12 +1,12 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
-    name = "skill_service",
-    srcs = ["SkillService.cpp"],
-    hdrs = ["SkillService.hpp"],
+    name = "command_service",
+    srcs = ["CommandService.cpp"],
+    hdrs = ["CommandService.hpp"],
     visibility = ["//visibility:public"],
     deps = [
-        "//src/components/autocomplete:skill_types",
+        "//src/components/autocomplete:command_types",
         "@yaml-cpp",
     ],
 )
