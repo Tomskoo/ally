@@ -423,7 +423,7 @@ struct StageViewImpl {
         vbox({
             filler(),
             hbox({filler(), RenderModelMenu()}),
-            emptyElement() | size(HEIGHT, EQUAL, 2),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
         }),
     });
   }
@@ -461,7 +461,7 @@ struct StageViewImpl {
         vbox({
             filler(),
             RenderAutocompleteOverlay(),
-            emptyElement() | size(HEIGHT, EQUAL, 2),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
         }),
     });
   }
@@ -786,7 +786,7 @@ struct StageViewImpl {
         vbox({
             filler(),
             RenderAutocompleteOverlay(),
-            emptyElement() | size(HEIGHT, EQUAL, 2),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
         }),
     });
   }
@@ -855,6 +855,12 @@ struct StageViewImpl {
     });
   }
 
+  auto InputBarHeight() -> int {
+    // +1 for the separator above the input bar
+    int input_lines = 1 + static_cast<int>(std::count(input_text.begin(), input_text.end(), '\n'));
+    return 1 + std::max(1, input_lines);
+  }
+
   auto RenderInputBar() -> Element {
     InteractionMode interaction;
     {
@@ -883,17 +889,20 @@ struct StageViewImpl {
     auto input_el = (interaction == InteractionMode::Insert) ? input_component->Render()
                                                              : text(input_text.empty() ? "type a message..." : input_text) | dim;
 
+    // Combine prompt label with the input so they share the same flex area,
+    // avoiding a separate column gap on multi-line input.
+    auto input_with_prompt = hbox({prompt_label, input_el | flex});
+
     auto model_el = RenderModelSelector();
 
     return hbox({
-        mode_label,
+        vbox({mode_label, filler()}),
         separator(),
-        prompt_label,
-        input_el | flex,
+        input_with_prompt | flex,
         separator(),
-        model_el,
+        vbox({model_el, filler()}),
         separator(),
-        send_label,
+        vbox({send_label, filler()}),
     });
   }
 
