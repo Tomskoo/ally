@@ -594,35 +594,30 @@ struct StageViewImpl {
         file_path = input["file_path"].get<std::string>();
       }
       auto lang = rendering::QueryStore::LanguageFromPath(file_path);
-      auto clean_code = !lang.empty() ? ExtractFileContent(output) : std::string{};
+      // Always try to extract file content to strip XML tags, even without a known language.
+      auto clean_code = !file_path.empty() ? ExtractFileContent(output) : std::string{};
 
       constexpr int kCollapseThreshold = 8;
       constexpr int kCollapsePreviewLines = 4;
       auto lines = SplitLines(!clean_code.empty() ? clean_code : output);
 
       if (static_cast<int>(lines.size()) <= kCollapseThreshold || expanded) {
-        if (!clean_code.empty()) {
+        if (!clean_code.empty() && !lang.empty()) {
           rendering::TreeSitterRenderer renderer(theme);
           els.push_back(renderer.RenderCodeBlock(clean_code, lang));
         } else {
-          els.push_back(paragraph(output));
+          els.push_back(paragraph(!clean_code.empty() ? clean_code : output));
         }
       } else {
-        if (!clean_code.empty()) {
-          // Syntax-highlight the preview lines.
-          std::string preview_code;
-          for (int idx = 0; idx < kCollapsePreviewLines && idx < static_cast<int>(lines.size()); ++idx) {
-            if (idx > 0) { preview_code += "\n"; }
-            preview_code += lines[idx];
-          }
+        std::string preview;
+        for (int idx = 0; idx < kCollapsePreviewLines && idx < static_cast<int>(lines.size()); ++idx) {
+          if (idx > 0) { preview += "\n"; }
+          preview += lines[idx];
+        }
+        if (!clean_code.empty() && !lang.empty()) {
           rendering::TreeSitterRenderer renderer(theme);
-          els.push_back(renderer.RenderCodeBlock(preview_code, lang));
+          els.push_back(renderer.RenderCodeBlock(preview, lang));
         } else {
-          std::string preview;
-          for (int idx = 0; idx < kCollapsePreviewLines && idx < static_cast<int>(lines.size()); ++idx) {
-            if (idx > 0) { preview += "\n"; }
-            preview += lines[idx];
-          }
           els.push_back(paragraph(preview));
         }
         els.push_back(text("\u2026") | dim);
