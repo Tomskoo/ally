@@ -1,5 +1,6 @@
 #include "src/configuration/Configuration.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
@@ -33,6 +34,36 @@ auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> OpenCodeCo
     if (opencode["model_per_provider"] && opencode["model_per_provider"].IsMap()) {
       for (const auto& pair : opencode["model_per_provider"]) {
         config.model_per_provider[pair.first.as<std::string>()] = pair.second.as<std::string>();
+      }
+    }
+    return config;
+  } catch (const YAML::Exception&) {
+    return {};
+  }
+}
+
+auto LoadRenderingConfig(const std::filesystem::path& project_root) -> RenderingConfig {
+  auto config_path = project_root / ".ally" / "config.yaml";
+  if (!std::filesystem::exists(config_path)) {
+    return {};
+  }
+
+  try {
+    auto root = YAML::LoadFile(config_path.string());
+    auto rendering = root["rendering"];
+    if (!rendering) {
+      return {};
+    }
+
+    RenderingConfig config;
+    if (rendering["query_dirs"] && rendering["query_dirs"].IsSequence()) {
+      const char* home = std::getenv("HOME");
+      for (const auto& entry : rendering["query_dirs"]) {
+        auto dir = entry.as<std::string>();
+        if (!dir.empty() && dir[0] == '~' && (home != nullptr) && home[0] != '\0') {
+          dir = std::string(home) + dir.substr(1);
+        }
+        config.query_dirs.emplace_back(std::move(dir));
       }
     }
     return config;

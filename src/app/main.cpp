@@ -292,6 +292,7 @@ auto main(int argc, char* argv[]) -> int {
     auto artifact_service = ally::providers::ArtifactService(project_root);
 
     auto opencode_config = ally::configuration::LoadOpenCodeConfig(project_root);
+    auto rendering_config = ally::configuration::LoadRenderingConfig(project_root);
 
     ally::AppContext ctx{
         .project_root = project_root,
@@ -300,6 +301,7 @@ auto main(int argc, char* argv[]) -> int {
         .artifact_service = artifact_service,
         .selected_provider = opencode_config.default_provider.value_or("opencode"),
         .provider_locked = opencode_config.lock_provider,
+        .query_dirs = std::move(rendering_config.query_dirs),
     };
 
     init_opencode_server(ctx, opencode_config);

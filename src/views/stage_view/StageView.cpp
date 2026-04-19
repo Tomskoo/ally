@@ -603,7 +603,7 @@ struct StageViewImpl {
 
       if (static_cast<int>(lines.size()) <= kCollapseThreshold || expanded) {
         if (!clean_code.empty() && !lang.empty()) {
-          rendering::TreeSitterRenderer renderer(theme);
+          rendering::TreeSitterRenderer renderer(theme, ctx.query_dirs);
           els.push_back(renderer.RenderCodeBlock(clean_code, lang));
         } else {
           els.push_back(paragraph(!clean_code.empty() ? clean_code : output));
@@ -615,7 +615,7 @@ struct StageViewImpl {
           preview += lines[idx];
         }
         if (!clean_code.empty() && !lang.empty()) {
-          rendering::TreeSitterRenderer renderer(theme);
+          rendering::TreeSitterRenderer renderer(theme, ctx.query_dirs);
           els.push_back(renderer.RenderCodeBlock(preview, lang));
         } else {
           els.push_back(paragraph(preview));
@@ -672,7 +672,7 @@ struct StageViewImpl {
         if (cached.element && cached.content_length == content.size()) {
           part_el = cached.element;
         } else {
-          rendering::TreeSitterRenderer renderer(theme);
+          rendering::TreeSitterRenderer renderer(theme, ctx.query_dirs);
           auto blocks = renderer.Render(content);
           Elements block_els;
           for (auto& block : blocks) {
@@ -1335,15 +1335,16 @@ struct StageViewImpl {
     auto t = theme;
     auto tid = task_id;
     auto thid = thread_id;
+    auto qdirs = ctx.query_dirs;
     auto& service = ctx.artifact_service;
     auto& scr = screen;
 
-    std::thread([s, t, tid, thid, stage_slug, &service, &scr] -> void {
+    std::thread([s, t, tid, thid, stage_slug, qdirs, &service, &scr] -> void {
       auto content = service.get_artifact(tid, thid, stage_slug);
 
       std::vector<Element> rendered;
       if (content.has_value() && !content->empty()) {
-        rendering::TreeSitterRenderer renderer(t);
+        rendering::TreeSitterRenderer renderer(t, qdirs);
         auto blocks = renderer.Render(*content);
         rendered.reserve(blocks.size());
         for (auto& block : blocks) {

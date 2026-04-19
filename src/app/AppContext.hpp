@@ -39,6 +39,9 @@ struct AppContext {
   bool provider_locked = false;
   std::shared_mutex provider_mutex;
 
+  // Rendering config
+  std::vector<std::filesystem::path> query_dirs;
+
   // Watcher broadcast channels
   watcher::WatcherBroadcast<watcher::ArtifactChangedEvent> artifact_broadcast;
   watcher::WatcherBroadcast<watcher::CommandsChangedEvent> commands_broadcast;
