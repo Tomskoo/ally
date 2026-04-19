@@ -28,16 +28,7 @@ auto render_pipeline(const std::vector<models::WorkflowStage>& stages) -> Elemen
     elements.push_back(text(" " + name + " ") | border);
 
     if (idx + 1 < stages.size()) {
-      auto product_label = stages[idx].product.has_value() ? *stages[idx].product : "";
-      if (product_label.empty()) {
-        elements.push_back(text(" -> ") | dim | vcenter);
-      } else {
-        elements.push_back(vbox({
-                               text(product_label) | dim | center,
-                               text(" -> ") | dim,
-                           }) |
-                           vcenter);
-      }
+      elements.push_back(text(" -> ") | dim | vcenter);
     }
   }
 
