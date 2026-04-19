@@ -72,12 +72,29 @@ auto HighlightTheme::LoadFromString(const std::string& yaml_content) -> Highligh
   return theme;
 }
 
-auto HighlightTheme::LoadDefault() -> HighlightTheme {
-  auto path = configuration::themes_dir() / "tokyonight.yaml";
+auto HighlightTheme::LoadDefault(const std::optional<std::string>& theme_name) -> HighlightTheme {
+  auto name = theme_name.value_or("tokyonight");
+
+  // Treat as absolute path if it contains a slash.
+  if (name.find('/') != std::string::npos) {
+    std::filesystem::path abs_path(name);
+    if (std::filesystem::exists(abs_path)) {
+      return Load(abs_path);
+    }
+  }
+
+  // Try themes_dir / <name>.yaml
+  auto path = configuration::themes_dir() / (name + ".yaml");
   if (std::filesystem::exists(path)) {
     return Load(path);
   }
-  return LoadFromString(std::string(embedded::kTokyonightTheme));
+
+  // Fall back to embedded tokyonight when that's what was requested.
+  if (name == "tokyonight") {
+    return LoadFromString(std::string(embedded::kTokyonightTheme));
+  }
+
+  throw std::runtime_error("Theme not found: " + name);
 }
 
 auto HighlightTheme::Resolve(std::string_view capture) const -> ftxui::Color {

@@ -302,6 +302,7 @@ auto main(int argc, char* argv[]) -> int {
         .selected_provider = opencode_config.default_provider.value_or("opencode"),
         .provider_locked = opencode_config.lock_provider,
         .query_dirs = std::move(rendering_config.query_dirs),
+      .theme_name = std::move(rendering_config.theme),
     };
 
     init_opencode_server(ctx, opencode_config);

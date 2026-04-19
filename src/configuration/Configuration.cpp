@@ -56,6 +56,9 @@ auto LoadRenderingConfig(const std::filesystem::path& project_root) -> Rendering
     }
 
     RenderingConfig config;
+    if (rendering["theme"]) {
+      config.theme = rendering["theme"].as<std::string>();
+    }
     if (rendering["query_dirs"] && rendering["query_dirs"].IsSequence()) {
       const char* home = std::getenv("HOME");
       for (const auto& entry : rendering["query_dirs"]) {

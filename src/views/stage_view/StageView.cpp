@@ -395,7 +395,7 @@ struct StageViewImpl {
         ctx(ctx),
         nav(nav),
         screen(screen),
-        theme(rendering::HighlightTheme::LoadDefault()),
+        theme(rendering::HighlightTheme::LoadDefault(ctx.theme_name)),
         state(std::make_shared<StageViewState>()) {}
 
   // -- Render dispatch --------------------------------------------------------

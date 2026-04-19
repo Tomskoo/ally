@@ -41,6 +41,7 @@ struct AppContext {
 
   // Rendering config
   std::vector<std::filesystem::path> query_dirs;
+  std::optional<std::string> theme_name;
 
   // Watcher broadcast channels
   watcher::WatcherBroadcast<watcher::ArtifactChangedEvent> artifact_broadcast;

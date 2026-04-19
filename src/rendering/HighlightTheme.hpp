@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <ftxui/screen/color.hpp>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -18,9 +19,10 @@ class HighlightTheme {
   /// Throws std::runtime_error if the content cannot be parsed.
   static auto LoadFromString(const std::string& yaml_content) -> HighlightTheme;
 
-  /// Load the default theme. Tries ~/.config/ally/themes/tokyonight.yaml first,
-  /// then falls back to the compiled-in embedded theme.
-  static auto LoadDefault() -> HighlightTheme;
+  /// Load a theme by name. Tries themes_dir()/<name>.yaml first,
+  /// then falls back to the compiled-in embedded theme for "tokyonight".
+  /// If no name is given, defaults to "tokyonight".
+  static auto LoadDefault(const std::optional<std::string>& theme_name = std::nullopt) -> HighlightTheme;
 
   /// Resolve a tree-sitter capture name to a color.
   /// Uses dotted fallback: "keyword.conditional.ternary" tries exact match,

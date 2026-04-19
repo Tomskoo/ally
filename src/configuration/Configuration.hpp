@@ -17,6 +17,7 @@ struct OpenCodeConfig {
 
 struct RenderingConfig {
   std::vector<std::filesystem::path> query_dirs;
+  std::optional<std::string> theme;
 };
 
 auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> OpenCodeConfig;
