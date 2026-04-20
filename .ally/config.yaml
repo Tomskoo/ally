@@ -1,3 +1,9 @@
 opencode:
   lock_provider: true
-  default_provider: "opencode-go"
+  default_provider: opencode-go
+  model_per_provider:
+    opencode-go: minimax-m2.7
+rendering:
+  theme: monokai-pro
+  query_dirs:
+    - ~/.local/share/nvim/lazy/nvim-treesitter/queries
