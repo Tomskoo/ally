@@ -550,6 +550,16 @@ struct StageViewImpl {
     auto status = tool_state.value("status", "");
     auto output = tool_state.value("output", "");
 
+    // While streaming, state.output is empty — use accumulated SSE text instead.
+    auto metadata = tool_state.value("metadata", nlohmann::json::object());
+    auto sub_session_id = metadata.value("sessionId", "");
+    if (output.empty() && !sub_session_id.empty()) {
+      auto it = state->chat.subagent_streaming_text.find(sub_session_id);
+      if (it != state->chat.subagent_streaming_text.end()) {
+        output = it->second;
+      }
+    }
+
     auto subagent_type = input.value("subagent_type", "task");
     auto description = input.value("description", title);
 
@@ -562,8 +572,8 @@ struct StageViewImpl {
     bool is_complete = (status == "completed");
     auto base_key = "subagent:" + msg_id + ":" + std::to_string(part_idx);
 
-    // Expand rule: running = always expanded, completed = collapsed by default.
-    bool expanded = !is_complete || state->chat.expanded_parts.count(base_key) > 0;
+    // Collapsed by default; click toggles expand/collapse in any state.
+    bool expanded = state->chat.expanded_parts.count(base_key) > 0;
 
     // Cache key encodes expand state so both versions are cached independently.
     auto cache_key = base_key + (expanded ? ":e" : ":c");
@@ -1372,6 +1382,23 @@ struct StageViewImpl {
         screen.PostEvent(Event::Custom);
         return true;
       }
+
+      // Click on collapsible tool parts to toggle expand/collapse.
+      if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+        std::scoped_lock lock(state->mtx);
+        for (auto& [key, box] : state->chat.collapsible_boxes) {
+          if (mouse.x >= box.x_min && mouse.x <= box.x_max && mouse.y >= box.y_min && mouse.y <= box.y_max) {
+            if (state->chat.expanded_parts.count(key) > 0) {
+              state->chat.expanded_parts.erase(key);
+            } else {
+              state->chat.expanded_parts.insert(key);
+            }
+            state->chat.rendered_parts_cache.clear();
+            screen.PostEvent(Event::Custom);
+            return true;
+          }
+        }
+      }
     }
 
     // Delegate everything else to the input component.
@@ -1512,9 +1539,51 @@ struct StageViewImpl {
     auto type = evt.data.value("type", "");
 
     if (type == "message.part.delta") {
+      // Filter out events from sub-agent sessions to prevent ghost messages,
+      // but accumulate their text so we can stream it inside the sub-agent card.
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      auto evt_sid = props.value("sessionID", "");
+      auto msg_id = props.value("messageID", "");
+      auto delta = props.value("delta", "");
+      {
+        std::scoped_lock lock(state->mtx);
+        if (state->chat.session_id) {
+          if (!evt_sid.empty() && evt_sid != *state->chat.session_id) {
+            // Sub-agent event — accumulate streaming text.
+            if (!delta.empty()) {
+              state->chat.subagent_streaming_text[evt_sid] += delta;
+            }
+            screen.PostEvent(Event::Custom);
+            return;
+          }
+          if (evt_sid.empty() && !msg_id.empty()) {
+            bool found = false;
+            for (const auto& msg : state->chat.messages) {
+              if (msg.info.id == msg_id) { found = true; break; }
+            }
+            if (!found) {
+              // Unknown message — look up sub-agent session from mapping.
+              auto sit = state->chat.subagent_msg_sessions.find(msg_id);
+              if (sit != state->chat.subagent_msg_sessions.end() && !delta.empty()) {
+                state->chat.subagent_streaming_text[sit->second] += delta;
+                screen.PostEvent(Event::Custom);
+              }
+              return;
+            }
+          }
+        }
+      }
       ApplyPartDelta(state, evt.data);
       screen.PostEvent(Event::Custom);
     } else if (type == "message.part.updated") {
+      // Filter out events from sub-agent sessions.
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      auto part_json = props.value("part", nlohmann::json::object());
+      auto evt_sid = part_json.value("sessionID", "");
+      {
+        std::scoped_lock lock(state->mtx);
+        if (state->chat.session_id && !evt_sid.empty() && evt_sid != *state->chat.session_id) { return; }
+      }
       ApplyPartUpdated(state, evt.data);
       screen.PostEvent(Event::Custom);
     } else if (type == "message.created") {
@@ -1525,8 +1594,14 @@ struct StageViewImpl {
       // Payload: properties.info = { id, role, sessionID }
       auto info = props.value("info", nlohmann::json::object());
       auto msg_id = info.value("id", "");
+      auto evt_sid = info.value("sessionID", "");
       if (!msg_id.empty()) {
         std::scoped_lock lock(state->mtx);
+        // Record sub-agent message→session mapping for delta accumulation, then skip.
+        if (state->chat.session_id && !evt_sid.empty() && evt_sid != *state->chat.session_id) {
+          state->chat.subagent_msg_sessions[msg_id] = evt_sid;
+          return;
+        }
         state->chat.is_loading = true;
         auto& msg = GetOrCreateMessage(*state, msg_id);
         // Carry over role and other metadata from the event.
@@ -1541,8 +1616,11 @@ struct StageViewImpl {
       auto props = evt.data.value("properties", nlohmann::json::object());
       auto info = props.value("info", nlohmann::json::object());
       auto msg_id = info.value("id", "");
+      auto evt_sid = info.value("sessionID", "");
       if (!msg_id.empty()) {
         std::scoped_lock lock(state->mtx);
+        // Skip messages from sub-agent sessions.
+        if (state->chat.session_id && !evt_sid.empty() && evt_sid != *state->chat.session_id) { return; }
         for (auto& msg : state->chat.messages) {
           if (msg.info.id == msg_id) {
             msg.info.extra = info;

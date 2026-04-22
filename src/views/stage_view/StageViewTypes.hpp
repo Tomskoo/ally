@@ -62,6 +62,11 @@ struct ChatPanelState {
   bool chat_follow = true;  // Auto-scroll to bottom on new content.
   uint64_t frame_count = 0;
 
+  // Sub-agent streaming: accumulate text from sub-agent SSE events so we can
+  // render live output inside the collapsible card while the sub-agent runs.
+  std::unordered_map<std::string, std::string> subagent_msg_sessions;    // msg_id → sub-agent session_id
+  std::unordered_map<std::string, std::string> subagent_streaming_text;  // session_id → accumulated text
+
   // Model selection
   std::vector<opencode::ModelInfo> all_models;
   std::vector<opencode::ModelInfo> filtered_models;
