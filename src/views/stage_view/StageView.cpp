@@ -503,11 +503,52 @@ struct StageViewImpl {
     return buf;
   }
 
-  auto RenderSubAgentPart(const nlohmann::json& part) -> Element {
+  // Extract summary from sub-agent output: content between <task_result> tags,
+  // or the first non-empty line of the output, truncated to max_len.
+  static auto ExtractSubAgentSummary(const std::string& output, size_t max_len = 100) -> std::string {
+    // Try <task_result>...</task_result> first.
+    constexpr std::string_view kOpen = "<task_result>";
+    constexpr std::string_view kClose = "</task_result>";
+    auto start = output.find(kOpen);
+    if (start != std::string::npos) {
+      start += kOpen.size();
+      auto end = output.find(kClose, start);
+      if (end != std::string::npos) {
+        // Grab the first non-empty line inside the tags.
+        auto block = output.substr(start, end - start);
+        std::istringstream ss(block);
+        std::string line;
+        while (std::getline(ss, line)) {
+          auto pos = line.find_first_not_of(" \t\r\n");
+          if (pos != std::string::npos) {
+            line = line.substr(pos);
+            if (line.size() > max_len) { line = line.substr(0, max_len) + "\u2026"; }
+            return line;
+          }
+        }
+      }
+    }
+
+    // Fallback: first non-empty line of raw output.
+    std::istringstream ss(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+      auto pos = line.find_first_not_of(" \t\r\n");
+      if (pos != std::string::npos) {
+        line = line.substr(pos);
+        if (line.size() > max_len) { line = line.substr(0, max_len) + "\u2026"; }
+        return line;
+      }
+    }
+    return "";
+  }
+
+  auto RenderSubAgentPart(const std::string& msg_id, size_t part_idx, const nlohmann::json& part) -> Element {
     auto tool_state = part.value("state", nlohmann::json::object());
     auto input = tool_state.value("input", nlohmann::json::object());
     auto title = tool_state.value("title", "");
     auto status = tool_state.value("status", "");
+    auto output = tool_state.value("output", "");
 
     auto subagent_type = input.value("subagent_type", "task");
     auto description = input.value("description", title);
@@ -518,11 +559,23 @@ struct StageViewImpl {
       type_label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(type_label[0])));
     }
 
-    Element header = hbox({
-        text(type_label + " Task") | bold,
-        text(" \u2014 ") | dim,
-        text(description),
-    });
+    bool is_complete = (status == "completed");
+    auto base_key = "subagent:" + msg_id + ":" + std::to_string(part_idx);
+
+    // Expand rule: running = always expanded, completed = collapsed by default.
+    bool expanded = !is_complete || state->chat.expanded_parts.count(base_key) > 0;
+
+    // Cache key encodes expand state so both versions are cached independently.
+    auto cache_key = base_key + (expanded ? ":e" : ":c");
+    auto& cached = state->chat.rendered_parts_cache[cache_key];
+    size_t cache_sig = output.size() + (is_complete ? 1 : 0);
+    if (cached.element && cached.content_length == cache_sig) {
+      // Use base_key for click target so both cached versions share the same box.
+      return cached.element | reflect(state->chat.collapsible_boxes[base_key]);
+    }
+
+    // Chevron indicator.
+    std::string chevron = expanded ? "\u25BE " : "\u25B8 ";
 
     // Duration from time.start/end.
     Elements meta_parts;
@@ -532,24 +585,58 @@ struct StageViewImpl {
           static_cast<double>(time_obj["end"].get<int64_t>() - time_obj["start"].get<int64_t>()) / 1000.0;
       meta_parts.push_back(text(FormatDuration(duration_s)) | dim);
     }
-    if (status != "completed") {
+    if (!is_complete) {
       meta_parts.push_back(text("Running...") | color(Color::Yellow));
     }
 
-    Element meta_el = meta_parts.empty() ? emptyElement() : hbox(std::move(meta_parts));
-
-    return hbox({
-        text("\u2502 ") | color(Color::Blue),
-        vbox({header, meta_el}),
+    Element header = hbox({
+        text(chevron) | color(Color::Blue),
+        text(type_label + " Task") | bold,
+        text(" \u2014 ") | dim,
+        text(description) | flex,
+        filler(),
+        hbox(std::move(meta_parts)),
     });
+
+    Elements card_els;
+    card_els.push_back(header);
+
+    if (expanded && !output.empty()) {
+      // Render the sub-agent output as markdown.
+      rendering::TreeSitterRenderer renderer(theme, ctx.query_dirs);
+      auto blocks = renderer.Render(output);
+      Elements block_els;
+      for (auto& block : blocks) {
+        block_els.push_back(std::move(block.element));
+      }
+      card_els.push_back(vbox(std::move(block_els)) | color(Color::GrayLight) | xflex);
+    } else if (!expanded && !output.empty()) {
+      // Collapsed summary line.
+      auto summary = ExtractSubAgentSummary(output);
+      if (!summary.empty()) {
+        card_els.push_back(text(summary) | dim);
+      }
+    } else if (!is_complete && output.empty()) {
+      card_els.push_back(text("  Waiting for output...") | dim);
+    }
+
+    // Blue bar spans the full card height via a separator column in an hbox.
+    auto el = hbox({
+        separator() | color(Color::Blue),
+        text(" "),
+        vbox(std::move(card_els)) | flex,
+    });
+
+    cached = {cache_sig, el};
+    return el | reflect(state->chat.collapsible_boxes[base_key]);
   }
 
   auto RenderToolPart(const std::string& msg_id, size_t part_idx, const nlohmann::json& part) -> Element {
     auto tool_name = part.value("tool", "tool");
 
-    // Sub-agent tools get compact rendering.
+    // Sub-agent tools get collapsible card rendering.
     if (tool_name == "task") {
-      return RenderSubAgentPart(part);
+      return RenderSubAgentPart(msg_id, part_idx, part);
     }
 
     auto tool_state = part.value("state", nlohmann::json::object());
