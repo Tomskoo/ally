@@ -846,8 +846,10 @@ struct StageViewImpl {
 
       // Render each visible message.
       for (size_t idx = start_idx; idx < total; ++idx) {
+        if (idx > start_idx) {
+          message_elements.push_back(text(""));
+        }
         message_elements.push_back(RenderMessage(msgs[idx]));
-        message_elements.push_back(text(""));
       }
 
       // Empty state.
@@ -1703,22 +1705,47 @@ struct StageViewImpl {
     }
 
     std::thread([sptr, sid, trimmed, model_spec, &ocs, &ocm, &scr]() -> void {
-      opencode::AsyncPromptRequest req;
-      req.data = {{"parts", {{{"type", "text"}, {"text", trimmed}}}}};
-      if (model_spec.has_value()) {
-        req.data["model"] = {{"modelID", model_spec->first}, {"providerID", model_spec->second}};
-      }
-      auto result = opencode::PromptAsync(ocs, ocm, sid, req);
-      if (opencode::is_ok(result)) {
-        // Query session status after sending
-        auto sess_result = opencode::GetSession(ocs, ocm, sid);
-        // Also check messages
+      bool is_command = !trimmed.empty() && trimmed[0] == '/';
+
+      if (is_command) {
+        auto space_pos = trimmed.find(' ');
+        std::string cmd_name =
+            (space_pos != std::string::npos) ? trimmed.substr(1, space_pos - 1) : trimmed.substr(1);
+        std::string arguments = (space_pos != std::string::npos) ? trimmed.substr(space_pos + 1) : "";
+
+        opencode::CommandRequest cmd_req;
+        cmd_req.command = cmd_name;
+        cmd_req.arguments = arguments;
+        if (model_spec.has_value()) {
+          cmd_req.extra["model"] = model_spec->second + "/" + model_spec->first;
+        }
+
+        auto result = opencode::RunCommand(ocs, ocm, sid, cmd_req);
+        if (opencode::is_ok(result)) {
+          auto sess_result = opencode::GetSession(ocs, ocm, sid);
+        } else {
+          const auto& err = opencode::get_error(result);
+          std::scoped_lock lock(sptr->mtx);
+          sptr->chat.error_msg = "Command failed: " + err.message;
+          sptr->chat.is_loading = false;
+        }
       } else {
-        const auto& err = opencode::get_error(result);
-        std::scoped_lock lock(sptr->mtx);
-        sptr->chat.error_msg = "Send failed: " + err.message;
-        sptr->chat.is_loading = false;
+        opencode::AsyncPromptRequest req;
+        req.data = {{"parts", {{{"type", "text"}, {"text", trimmed}}}}};
+        if (model_spec.has_value()) {
+          req.data["model"] = {{"modelID", model_spec->first}, {"providerID", model_spec->second}};
+        }
+        auto result = opencode::PromptAsync(ocs, ocm, sid, req);
+        if (opencode::is_ok(result)) {
+          auto sess_result = opencode::GetSession(ocs, ocm, sid);
+        } else {
+          const auto& err = opencode::get_error(result);
+          std::scoped_lock lock(sptr->mtx);
+          sptr->chat.error_msg = "Send failed: " + err.message;
+          sptr->chat.is_loading = false;
+        }
       }
+
       scr.PostEvent(Event::Custom);
     }).detach();
 

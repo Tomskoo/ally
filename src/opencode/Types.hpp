@@ -134,12 +134,14 @@ inline void to_json(nlohmann::json& json, const AsyncPromptRequest& val) { json 
 
 struct CommandRequest {
   std::string command;
+  std::string arguments;
   nlohmann::json extra;
 };
 
 inline void to_json(nlohmann::json& json, const CommandRequest& val) {
   json = val.extra;
   json["command"] = val.command;
+  json["arguments"] = val.arguments;
 }
 
 struct ShellRequest {

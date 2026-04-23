@@ -16,19 +16,13 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
       children_[0]->ComputeRequirement();
       requirement_ = children_[0]->requirement();
       content_req_h_ = requirement_.min_y;
-      content_req_w_ = requirement_.min_x;
       requirement_.min_y = 0;
     }
     void SetBox(Box box) override {
       Node::SetBox(box);
       const int viewport_h = box.y_max - box.y_min + 1;
-      const int viewport_w = std::max(1, box.x_max - box.x_min + 1);
 
-      int content_h = content_req_h_;
-      if (content_req_w_ > viewport_w) {
-        content_h = content_req_h_ * ((content_req_w_ + viewport_w - 1) / viewport_w);
-      }
-      content_h = std::max(content_h, viewport_h);
+      int content_h = std::max(content_req_h_, viewport_h);
 
       const int max_scroll = std::max(0, content_h - viewport_h);
       *scroll_y_ = std::clamp(*scroll_y_, 0, max_scroll);
@@ -48,7 +42,6 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
    private:
     int* scroll_y_;
     int content_req_h_ = 0;
-    int content_req_w_ = 0;
   };
   return std::make_shared<Impl>(std::move(child), scroll_y);
 }
