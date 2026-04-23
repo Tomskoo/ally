@@ -972,7 +972,7 @@ struct StageViewImpl {
       return text("");
     }();
 
-    auto prompt_label = (interaction == InteractionMode::Insert) ? (text(" $ ") | bold | inverted) : (text(" $ ") | bold | dim);
+    auto prompt_label = (interaction == InteractionMode::Insert) ? (text(" $ ") | bold | color(Color::White)) : (text(" $ ") | bold | dim);
 
     auto send_label = !input_text.empty() ? (text(" M-⏎ Send ") | bold | color(Color::Green)) : (text(" M-⏎ Send ") | dim);
 
@@ -987,13 +987,18 @@ struct StageViewImpl {
 
     auto model_el = RenderModelSelector();
 
+    auto sep = [&]() -> Element {
+      return interaction == InteractionMode::Insert ? separatorStyled(LIGHT) | color(Color::Green)
+                                                    : separator();
+    };
+
     return hbox({
         vbox({mode_label, filler()}),
-        separator(),
+        sep(),
         input_with_prompt | flex,
-        separator(),
+        sep(),
         vbox({model_el, filler()}),
-        separator(),
+        sep(),
         vbox({send_label, filler()}),
     });
   }
@@ -1866,6 +1871,12 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
   InputOption input_opts;
   input_opts.multiline = true;
   input_opts.cursor_position = &impl->cursor_pos;
+  input_opts.transform = [](InputState state) -> Element {
+    if (state.is_placeholder) {
+      state.element |= dim;
+    }
+    return state.element;
+  };
   input_opts.on_change = [impl] -> void {
     // Check all three autocomplete triggers on every text change.
     {
