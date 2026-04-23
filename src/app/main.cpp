@@ -33,6 +33,7 @@
 #include "src/views/create_thread/CreateThread.hpp"
 #include "src/views/stage_view/StageView.hpp"
 #include "src/views/task_detail/TaskDetail.hpp"
+#include "src/views/quick_chat/QuickChat.hpp"
 #include "src/views/workflow_form/WorkflowForm.hpp"
 #include "src/views/workflow_list/WorkflowList.hpp"
 
@@ -70,6 +71,7 @@ auto parent_state(const ally::NavState& current) -> std::optional<ally::NavState
           [](const ally::WorkflowsState&) -> std::optional<ally::NavState> { return ally::BoardState{}; },
           [](const ally::NewWorkflowState&) -> std::optional<ally::NavState> { return ally::WorkflowsState{}; },
           [](const ally::EditWorkflowState&) -> std::optional<ally::NavState> { return ally::WorkflowsState{}; },
+          [](const ally::QuickChatState&) -> std::optional<ally::NavState> { return ally::BoardState{}; },
       },
       current);
 }
@@ -266,6 +268,15 @@ auto handle_app_event(const Event& event, ally::Navigator& nav, const AppCompone
     components.bottom_bar->TakeFocus();
     return true;
   }
+  // 5. Meta+W — open/reset Quick Chat
+  if (event == Event::Special({kEscByte, 'w'})) {
+    if (std::holds_alternative<ally::QuickChatState>(nav.current())) {
+      nav.replace(ally::QuickChatState{});
+    } else {
+      nav.go(ally::QuickChatState{});
+    }
+    return true;
+  }
   if (components.bottom_bar->OnEvent(event)) {
     return true;
   }
@@ -354,6 +365,9 @@ auto main(int argc, char* argv[]) -> int {
               },
               [&](const ally::EditWorkflowState& state) -> void {
                 *active_component = ally::views::workflow_form(ctx, nav, state.workflow_id) | border;
+              },
+              [&](const ally::QuickChatState&) -> void {
+                *active_component = ally::views::quick_chat(ctx, nav, screen) | border;
               },
           },
           nav.current());

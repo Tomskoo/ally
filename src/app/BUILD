@@ -57,6 +57,7 @@ cc_binary(
         "//src/views/board",
         "//src/views/create_task",
         "//src/views/create_thread",
+        "//src/views/quick_chat",
         "//src/views/task_detail",
         "//src/views/workflow_form",
         "//src/services/watcher:artifact_watcher",

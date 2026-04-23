@@ -50,6 +50,7 @@ auto nav_key_str(const ally::NavState& nav) -> std::string {
                         [](const ally::WorkflowsState&) -> std::string { return std::string("workflows"); },
                         [](const ally::NewWorkflowState&) -> std::string { return std::string("new_workflow"); },
                         [](const ally::EditWorkflowState& state) -> std::string { return "edit_wf:" + state.workflow_id; },
+                        [](const ally::QuickChatState&) -> std::string { return std::string("quick_chat"); },
                     },
                     nav);
 }
@@ -292,6 +293,13 @@ auto nav_bar(ally::AppContext& ctx, ally::Navigator& nav) -> Component {
                          sep(),
                          hbox(std::move(stage_els)),
                      });
+                   },
+
+                   // ── Quick Chat ────────────────────────────────────
+                   [&](const ally::QuickChatState&) -> void {
+                     stage_container->DetachAllChildren();
+                     stage_btns->clear();
+                     breadcrumbs = text("Quick Chat") | bold;
                    },
                },
                nav.current());

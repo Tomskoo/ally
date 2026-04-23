@@ -23,8 +23,9 @@ struct NewWorkflowState {};
 struct EditWorkflowState {
   std::string workflow_id;
 };
+struct QuickChatState {};
 
 using NavState = std::variant<BoardState, NewTaskState, TaskDetailState, StageViewState, NewThreadState, WorkflowsState,
-                              NewWorkflowState, EditWorkflowState>;
+                              NewWorkflowState, EditWorkflowState, QuickChatState>;
 
 }  // namespace ally
