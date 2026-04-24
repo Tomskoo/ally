@@ -489,11 +489,13 @@ struct QuickChatImpl {
     auto output = tool_state.value("output", "");
     auto input = tool_state.value("input", nlohmann::json::object());
 
-    auto cache_key = msg_id + ":" + std::to_string(part_idx);
+    auto base_key = msg_id + ":" + std::to_string(part_idx);
+    bool expanded = !output.empty() && state->chat.expanded_parts.count(base_key) > 0;
+    auto cache_key = base_key + (expanded ? ":e" : ":c");
     auto& cached = state->chat.rendered_parts_cache[cache_key];
     if (cached.element && cached.content_length == output.size()) {
       if (!output.empty()) {
-        return cached.element | reflect(state->chat.collapsible_boxes[cache_key]);
+        return cached.element | reflect(state->chat.collapsible_boxes[base_key]);
       }
       return cached.element;
     }
@@ -511,7 +513,6 @@ struct QuickChatImpl {
     }
 
     if (!output.empty()) {
-      bool expanded = state->chat.expanded_parts.count(cache_key) > 0;
 
       std::string file_path;
       if (input.contains("filePath") && input["filePath"].is_string()) {
@@ -551,7 +552,7 @@ struct QuickChatImpl {
 
       auto el = vbox(std::move(els)) | border | color(Color::GrayLight) | xflex;
       cached = {output.size(), el};
-      return el | reflect(state->chat.collapsible_boxes[cache_key]);
+      return el | reflect(state->chat.collapsible_boxes[base_key]);
     }
 
     if (status != "completed") {
@@ -870,7 +871,6 @@ struct QuickChatImpl {
             } else {
               state->chat.expanded_parts.insert(key);
             }
-            state->chat.rendered_parts_cache.clear();
             screen.PostEvent(Event::Custom);
             return true;
           }

@@ -655,12 +655,14 @@ struct StageViewImpl {
     auto output = tool_state.value("output", "");
     auto input = tool_state.value("input", nlohmann::json::object());
 
-    auto cache_key = msg_id + ":" + std::to_string(part_idx);
+    auto base_key = msg_id + ":" + std::to_string(part_idx);
+    bool expanded = !output.empty() && state->chat.expanded_parts.count(base_key) > 0;
+    auto cache_key = base_key + (expanded ? ":e" : ":c");
     auto& cached = state->chat.rendered_parts_cache[cache_key];
     if (cached.element && cached.content_length == output.size()) {
       // Still need reflect for click tracking even on cache hit.
       if (!output.empty()) {
-        return cached.element | reflect(state->chat.collapsible_boxes[cache_key]);
+        return cached.element | reflect(state->chat.collapsible_boxes[base_key]);
       }
       return cached.element;
     }
@@ -681,7 +683,6 @@ struct StageViewImpl {
 
     // Show tool output as collapsible content.
     if (!output.empty()) {
-      bool expanded = state->chat.expanded_parts.count(cache_key) > 0;
 
       // Detect file path for syntax highlighting.
       std::string file_path;
@@ -724,7 +725,7 @@ struct StageViewImpl {
       // Cache the rendered element and register a clickable box for expand/collapse toggle.
       auto el = vbox(std::move(els)) | border | color(Color::GrayLight) | xflex;
       cached = {output.size(), el};
-      return el | reflect(state->chat.collapsible_boxes[cache_key]);
+      return el | reflect(state->chat.collapsible_boxes[base_key]);
     }
 
     if (status != "completed") {
@@ -1222,7 +1223,6 @@ struct StageViewImpl {
             } else {
               state->chat.expanded_parts.insert(key);
             }
-            state->chat.rendered_parts_cache.clear();
             screen.PostEvent(Event::Custom);
             return true;
           }
@@ -1400,7 +1400,6 @@ struct StageViewImpl {
             } else {
               state->chat.expanded_parts.insert(key);
             }
-            state->chat.rendered_parts_cache.clear();
             screen.PostEvent(Event::Custom);
             return true;
           }
