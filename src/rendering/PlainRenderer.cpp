@@ -79,7 +79,8 @@ void CollectInlineWords(cmark_node* node, Elements& words) {
       }
       case CMARK_NODE_SOFTBREAK:
       case CMARK_NODE_LINEBREAK:
-        break;  // flexbox gap handles spacing
+        words.push_back(nullptr);  // sentinel for line break
+        break;
       default:
         CollectInlineWords(child, words);
         break;
@@ -87,14 +88,30 @@ void CollectInlineWords(cmark_node* node, Elements& words) {
   }
 }
 
-// Render inline content as a flexbox that word-wraps.
+// Render inline content as word-wrapped lines, respecting hard/soft breaks.
 auto RenderInlineWrapped(cmark_node* node) -> Element {
   static const auto config = FlexboxConfig().SetGap(1, 0);
   Elements words;
   CollectInlineWords(node, words);
   if (words.empty()) { return text("");
 }
-  return flexbox(std::move(words), config);
+
+  // Split on nullptr sentinels inserted by SOFTBREAK/LINEBREAK handling.
+  Elements lines;
+  Elements current_line;
+  for (auto& w : words) {
+    if (!w) {
+      lines.push_back(current_line.empty() ? text("") : flexbox(std::move(current_line), config));
+      current_line.clear();
+    } else {
+      current_line.push_back(std::move(w));
+    }
+  }
+  lines.push_back(current_line.empty() ? text("") : flexbox(std::move(current_line), config));
+
+  if (lines.size() == 1) { return std::move(lines[0]);
+}
+  return vbox(std::move(lines));
 }
 
 // Render a GFM table node into a bordered grid with styled header row.
@@ -156,10 +173,14 @@ auto RenderTable(cmark_node* table_node) -> Element {
 // Forward declaration — RenderBlock and RenderChildren are mutually recursive.
 auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element;
 
-// Render all children of a node as a vertical stack of blocks.
+// Render all children of a node as a vertical stack of blocks, with blank-line
+// separators between sibling block-level nodes (mirroring markdown spacing).
 auto RenderChildren(cmark_node* node, PlainRenderer& renderer) -> Elements {
   Elements elems;
   for (auto* child = cmark_node_first_child(node); child != nullptr; child = cmark_node_next(child)) {
+    if (!elems.empty()) {
+      elems.push_back(text(""));
+    }
     elems.push_back(RenderBlock(child, renderer));
   }
   return elems;
@@ -259,10 +280,31 @@ auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element {
 
 }  // namespace
 
+// Strip YAML frontmatter (--- ... ---) from the beginning of markdown content.
+// cmark-gfm does not support frontmatter and mis-parses it as setext headings.
+static auto StripFrontmatter(const std::string& markdown) -> std::string {
+  if (markdown.size() < 3 || markdown.substr(0, 3) != "---") {
+    return markdown;
+  }
+  // Find the closing "---" on its own line after the opening.
+  auto close = markdown.find("\n---", 3);
+  if (close == std::string::npos) {
+    return markdown;
+  }
+  // Skip past the closing "---" and any trailing newline.
+  auto after = close + 4;  // skip "\n---"
+  if (after < markdown.size() && markdown[after] == '\n') {
+    ++after;
+  }
+  return markdown.substr(after);
+}
+
 auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedBlock> {
   // Register GFM extensions once (thread-safe).
   static std::once_flag gfm_init;
   std::call_once(gfm_init, [] { cmark_gfm_core_extensions_ensure_registered(); });
+
+  auto content = StripFrontmatter(markdown);
 
   // Use the parser API so we can attach the table extension.
   cmark_parser* parser = cmark_parser_new(CMARK_OPT_DEFAULT);
@@ -270,7 +312,7 @@ auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedB
   if (table_ext != nullptr) {
     cmark_parser_attach_syntax_extension(parser, table_ext);
   }
-  cmark_parser_feed(parser, markdown.c_str(), markdown.size());
+  cmark_parser_feed(parser, content.c_str(), content.size());
   cmark_node* doc = cmark_parser_finish(parser);
 
   std::vector<RenderedBlock> blocks;
@@ -298,6 +340,9 @@ auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedB
           kind = RenderedBlock::Paragraph;
         }
         break;
+    }
+    if (!blocks.empty()) {
+      blocks.push_back({RenderedBlock::Paragraph, text("")});
     }
     blocks.push_back({kind, RenderBlock(node, *this)});
   }

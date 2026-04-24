@@ -445,7 +445,13 @@ struct StageViewImpl {
     if (loading) {
       content_body = text("  Loading...") | dim | flex;
     } else if (view_mode == ArtifactViewMode::Raw && raw_content.has_value()) {
-      content_body = paragraph(*raw_content) | border | flex;
+      Elements raw_lines;
+      std::istringstream stream(*raw_content);
+      std::string line;
+      while (std::getline(stream, line)) {
+        raw_lines.push_back(text(line.empty() ? " " : line));
+      }
+      content_body = vbox(std::move(raw_lines)) | border | flex;
     } else if (!rendered.empty()) {
       content_body = vbox(std::move(rendered)) | flex;
     } else {

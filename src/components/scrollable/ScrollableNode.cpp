@@ -22,7 +22,21 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
       Node::SetBox(box);
       const int viewport_h = box.y_max - box.y_min + 1;
 
+      // First pass: lay out child at the correct width so wrapping elements
+      // (flexbox/paragraph) settle at their true wrapped height.
       int content_h = std::max(content_req_h_, viewport_h);
+      {
+        Box probe = box;
+        probe.y_min = box.y_min;
+        probe.y_max = probe.y_min + content_h - 1;
+        children_[0]->SetBox(probe);
+      }
+
+      // Re-query: after SetBox, flexbox elements know their actual width and
+      // ComputeRequirement now reports the correct wrapped min_y.
+      children_[0]->ComputeRequirement();
+      int measured_h = children_[0]->requirement().min_y;
+      content_h = std::max({content_req_h_, measured_h, viewport_h});
 
       const int max_scroll = std::max(0, content_h - viewport_h);
       *scroll_y_ = std::clamp(*scroll_y_, 0, max_scroll);
