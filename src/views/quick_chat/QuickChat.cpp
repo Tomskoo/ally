@@ -21,6 +21,8 @@
 #include "src/components/autocomplete/CommandTypes.hpp"
 #include "src/components/autocomplete/Types.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
+#include "src/components/vim_mode/CursorOverlayNode.hpp"
+#include "src/components/vim_mode/VimMode.hpp"
 #include "src/opencode/Service.hpp"
 #include "src/rendering/HighlightTheme.hpp"
 #include "src/rendering/TreeSitterRenderer.hpp"
@@ -29,6 +31,7 @@
 
 using namespace ftxui;
 using ally::components::make_scrollable;
+using ally::components::reflect_layout;
 
 namespace ally::views {
 
@@ -36,26 +39,20 @@ namespace {
 
 constexpr int kScrollLines = 3;
 
+using detail::InteractionMode;
 using detail::QuickChatCachedPartRender;
 using detail::QuickChatPanelState;
 using detail::QuickChatViewState;
+using detail::TextCursor;
+using detail::VisualModeState;
+
+using ally::vim::CopyToClipboard;
+using ally::vim::SplitLines;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-auto SplitLines(const std::string& s) -> std::vector<std::string> {
-  std::vector<std::string> lines;
-  std::istringstream stream(s);
-  std::string line;
-  while (std::getline(stream, line)) {
-    lines.push_back(std::move(line));
-  }
-  if (lines.empty()) {
-    lines.emplace_back();
-  }
-  return lines;
-}
+// SplitLines, CopyToClipboard etc. are in src/components/vim_mode/VimMode.hpp.
 
 auto ExtractFileContent(const std::string& output) -> std::string {
   auto content_start = output.find("<content>");
@@ -285,6 +282,14 @@ struct QuickChatImpl {
   Component model_button;
   Component model_menu;
 
+  // Cursor overlay (lives on the struct so the pointer survives through render).
+  std::optional<ally::vim::CursorOverlay> chat_overlay_;
+
+  // Message boundary tracking for J/K jumps (populated during render).
+  std::vector<ftxui::Box> msg_reflect_boxes_;
+  std::vector<bool> msg_is_user_;
+  ftxui::Box chat_body_box_;
+
   QuickChatImpl(AppContext& ctx, Navigator& nav, ScreenInteractive& screen)
       : ctx(ctx),
         nav(nav),
@@ -304,7 +309,18 @@ struct QuickChatImpl {
   // -- Render ----------------------------------------------------------------
 
   auto Render() -> Element {
-    auto content = RenderChatPanel();
+    InteractionMode interaction;
+    {
+      std::scoped_lock lock(state->mtx);
+      interaction = state->interaction;
+    }
+
+    Element content;
+    if (interaction == InteractionMode::Normal || interaction == InteractionMode::Visual) {
+      content = RenderChatWithOverlay(interaction == InteractionMode::Visual);
+    } else {
+      content = RenderChatPanel();
+    }
 
     return dbox({
         content,
@@ -687,11 +703,97 @@ struct QuickChatImpl {
       }
     }
 
-    auto chat_body = vbox(std::move(message_elements)) | flex;
+    auto chat_body = vbox(std::move(message_elements));
 
     return dbox({
         vbox({
-            make_scrollable(chat_body | vscroll_indicator, &state->chat.chat_scroll_y) | flex,
+            make_scrollable(chat_body | vscroll_indicator, &state->chat.chat_scroll_y, &state->chat.viewport_height, &state->chat.content_height) | flex,
+            separator(),
+            RenderInputBar(),
+        }),
+        vbox({
+            filler(),
+            RenderAutocompleteOverlay(),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
+        }),
+    });
+  }
+
+  /// Render chat with cursor/selection overlay (Normal or Visual mode).
+  auto RenderChatWithOverlay(bool is_visual) -> Element {
+    Elements message_elements;
+    {
+      std::scoped_lock lock(state->mtx);
+      state->chat.frame_count++;
+
+      auto& msgs = state->chat.messages;
+      size_t total = msgs.size();
+      size_t visible = std::min(total, state->chat.visible_count);
+      size_t start_idx = total - visible;
+
+      if (start_idx > 0) {
+        size_t remaining = start_idx;
+        size_t load_count = std::min(remaining, static_cast<size_t>(30));
+        message_elements.push_back(text("  Load " + std::to_string(load_count) + " earlier messages") | dim | bold);
+        message_elements.push_back(text(""));
+      }
+
+      msg_reflect_boxes_.resize(total - start_idx);
+      msg_is_user_.resize(total - start_idx);
+      size_t box_idx = 0;
+      for (size_t idx = start_idx; idx < total; ++idx) {
+        if (idx > start_idx) {
+          message_elements.push_back(text(""));
+        }
+        auto& extra = msgs[idx].info.extra;
+        msg_is_user_[box_idx] = extra.is_object() && extra.contains("role") &&
+                                extra["role"].is_string() && extra["role"].get<std::string>() == "user";
+        message_elements.push_back(RenderMessage(msgs[idx]) | reflect_layout(msg_reflect_boxes_[box_idx]));
+        box_idx++;
+      }
+
+      if (msgs.empty() && !state->chat.is_loading) {
+        message_elements.push_back(text("  Send a message to start chatting.") | dim);
+      }
+
+      if (state->chat.is_loading) {
+        const auto *label = (state->chat.frame_count % 2 == 0) ? "Thinking..." : "Thinking. . .";
+        message_elements.push_back(text("  " + std::string(label)) | dim);
+      }
+
+      if (state->chat.error_msg) {
+        message_elements.push_back(paragraph("  Error: " + *state->chat.error_msg) | color(Color::Red));
+      }
+    }
+
+    auto chat_body = vbox(std::move(message_elements)) | reflect_layout(chat_body_box_);
+
+    // Build cursor overlay state.
+    chat_overlay_ = std::nullopt;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (is_visual && state->visual.has_value()) {
+        auto [sel_s, sel_e] = ally::vim::NormalizeSelection(state->visual->anchor, state->visual->cursor);
+        chat_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Selection,
+            state->visual->cursor.row, state->visual->cursor.col,
+            sel_s.row, sel_s.col, sel_e.row, sel_e.col,
+        };
+      } else if (state->chat.chat_cursor.has_value()) {
+        chat_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Cursor,
+            state->chat.chat_cursor->row, state->chat.chat_cursor->col,
+            0, 0, 0, 0,
+        };
+      }
+    }
+
+    const ally::vim::CursorOverlay* overlay_ptr = chat_overlay_.has_value() ? &*chat_overlay_ : nullptr;
+    auto overlaid = ally::vim::make_cursor_overlay(chat_body, overlay_ptr);
+
+    return dbox({
+        vbox({
+            make_scrollable(overlaid | vscroll_indicator, &state->chat.chat_scroll_y, &state->chat.viewport_height, &state->chat.content_height) | flex,
             separator(),
             RenderInputBar(),
         }),
@@ -709,10 +811,27 @@ struct QuickChatImpl {
   }
 
   auto RenderInputBar() -> Element {
-    auto mode_label = text(" CHAT ") | bold | color(Color::Green);
-    auto prompt_label = text(" $ ") | bold | color(Color::White);
+    InteractionMode interaction;
+    {
+      std::scoped_lock lock(state->mtx);
+      interaction = state->interaction;
+    }
+
+    auto mode_label = [&]() -> Element {
+      switch (interaction) {
+        case InteractionMode::Normal:
+          return text(" NORMAL ") | bold | dim;
+        case InteractionMode::Visual:
+          return text(" VISUAL ") | bold | inverted;
+        case InteractionMode::Insert:
+          return text(" CHAT ") | bold | color(Color::Green);
+      }
+      return text("");
+    }();
+    auto prompt_label = (interaction == InteractionMode::Insert) ? (text(" $ ") | bold | color(Color::White)) : (text(" $ ") | bold | dim);
     auto send_label = !input_text.empty() ? (text(" M-\u23CE Send ") | bold | color(Color::Green)) : (text(" M-\u23CE Send ") | dim);
-    auto input_el = input_component->Render();
+    auto input_el = (interaction == InteractionMode::Insert) ? input_component->Render()
+                                                              : text(input_text.empty() ? "type a message..." : input_text) | dim;
     auto input_with_prompt = hbox({prompt_label, input_el | flex});
     auto model_el = RenderModelSelector();
 
@@ -781,6 +900,44 @@ struct QuickChatImpl {
     return overlay | clear_under;
   }
 
+  // -- Scroll-follow-cursor ----------------------------------------------------
+
+  /// Adjusts chat_scroll_y so the cursor row is within the visible viewport.
+  /// Caller must hold state->mtx.
+  void ScrollToCursor() {
+    if (!state->chat.chat_cursor.has_value()) { return; }
+    int cursor_row = state->chat.chat_cursor->row;
+    int scroll_y = state->chat.chat_scroll_y;
+    int viewport_h = state->chat.viewport_height;
+    if (viewport_h <= 0) { return; }
+
+    if (cursor_row < scroll_y) {
+      state->chat.chat_scroll_y = cursor_row;
+    } else if (cursor_row >= scroll_y + viewport_h) {
+      state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+    }
+  }
+
+  // -- Message boundary tracking -----------------------------------------------
+
+  void UpdateMessageBoundaries() {
+    std::scoped_lock lock(state->mtx);
+    state->chat.message_screen_rows.clear();
+    state->chat.user_message_screen_rows.clear();
+
+    // Use the chat body's top edge as origin so boundary rows are in the same
+    // content-relative coordinate space as the cursor (row 0 = top of content).
+    int origin_y = chat_body_box_.y_min;
+
+    for (size_t i = 0; i < msg_reflect_boxes_.size(); ++i) {
+      int content_row = msg_reflect_boxes_[i].y_min - origin_y;
+      state->chat.message_screen_rows.push_back(content_row);
+      if (i < msg_is_user_.size() && msg_is_user_[i]) {
+        state->chat.user_message_screen_rows.push_back(content_row);
+      }
+    }
+  }
+
   // -- Event handling ---------------------------------------------------------
 
   auto HandleEvent(Event event) -> bool {
@@ -790,10 +947,253 @@ struct QuickChatImpl {
       for (const auto& evt : events) {
         DispatchSseEvent(evt);
       }
+      UpdateMessageBoundaries();
       return false;
     }
 
-    // Tab: insert a tab character into the input (prevent focus cycling).
+    InteractionMode interaction;
+    {
+      std::scoped_lock lock(state->mtx);
+      interaction = state->interaction;
+    }
+
+    switch (interaction) {
+      case InteractionMode::Normal:
+        return HandleNormalEvent(event);
+      case InteractionMode::Visual:
+        return HandleVisualEvent(event);
+      case InteractionMode::Insert:
+        return HandleInsertEvent(event);
+    }
+    return false;
+  }
+
+  auto HandleNormalEvent(Event& event) -> bool {
+    // Escape in Normal mode: exit the view.
+    if (event == Event::Escape) {
+      nav.back();
+      return true;
+    }
+
+    // 'v' enters Visual mode.
+    if (event == Event::Character('v')) {
+      EnterVisualMode();
+      return true;
+    }
+
+    // 'i' enters Insert mode.
+    if (event == Event::Character('i')) {
+      {
+        std::scoped_lock lock(state->mtx);
+        state->interaction = InteractionMode::Insert;
+        state->chat.chat_cursor = std::nullopt;
+      }
+      input_component->TakeFocus();
+      screen.PostEvent(Event::Custom);
+      return true;
+    }
+
+    // hjkl and arrow keys move the cursor.
+    {
+      bool is_left  = event == Event::Character('h') || event == Event::ArrowLeft;
+      bool is_down  = event == Event::Character('j') || event == Event::ArrowDown;
+      bool is_up    = event == Event::Character('k') || event == Event::ArrowUp;
+      bool is_right = event == Event::Character('l') || event == Event::ArrowRight;
+
+      if (is_left || is_down || is_up || is_right) {
+        std::scoped_lock lock(state->mtx);
+        if (!state->chat.chat_cursor.has_value()) {
+          int last_row = std::max(0, state->chat.content_height - 1);
+          state->chat.chat_cursor = TextCursor{last_row, 0};
+          state->chat.chat_follow = false;
+        }
+        auto& cur = *state->chat.chat_cursor;
+        int max_row = std::max(0, state->chat.content_height - 1);
+
+        if (is_left) {
+          cur.col = std::max(0, cur.col - 1);
+        } else if (is_right) {
+          cur.col = cur.col + 1;
+        } else if (is_up) {
+          cur.row = std::max(0, cur.row - 1);
+        } else if (is_down) {
+          cur.row = std::min(cur.row + 1, max_row);
+        }
+
+        ScrollToCursor();
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+    }
+
+    // J (Shift+J) / Shift+Down / K (Shift+K) / Shift+Up: jump to next/previous message boundary.
+    {
+      bool is_next = event == Event::Character('J') || event == Event::Special("\x1b[1;2B");
+      bool is_prev = event == Event::Character('K') || event == Event::Special("\x1b[1;2A");
+
+      if (is_next || is_prev) {
+        std::scoped_lock lock(state->mtx);
+        if (!state->chat.chat_cursor.has_value()) {
+          int last_row = std::max(0, state->chat.content_height - 1);
+          state->chat.chat_cursor = TextCursor{last_row, 0};
+          state->chat.chat_follow = false;
+        }
+        auto& cur = *state->chat.chat_cursor;
+        auto& rows = state->chat.message_screen_rows;
+
+        if (is_next) {
+          for (int row : rows) {
+            if (row > cur.row) {
+              cur.row = row;
+              cur.col = 0;
+              break;
+            }
+          }
+        } else {
+          for (auto rit = rows.rbegin(); rit != rows.rend(); ++rit) {
+            if (*rit < cur.row) {
+              cur.row = *rit;
+              cur.col = 0;
+              break;
+            }
+          }
+        }
+
+        ScrollToCursor();
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+    }
+
+    // Alt+J / Alt+Down / Alt+K / Alt+Up: jump to next/previous user input ($ message).
+    {
+      bool is_next = event == Event::AltJ || event == Event::Special("\x1b[1;3B");
+      bool is_prev = event == Event::AltK || event == Event::Special("\x1b[1;3A");
+
+      if (is_next || is_prev) {
+        std::scoped_lock lock(state->mtx);
+        if (!state->chat.chat_cursor.has_value()) {
+          int last_row = std::max(0, state->chat.content_height - 1);
+          state->chat.chat_cursor = TextCursor{last_row, 0};
+          state->chat.chat_follow = false;
+        }
+        auto& cur = *state->chat.chat_cursor;
+        auto& rows = state->chat.user_message_screen_rows;
+
+        if (is_next) {
+          for (int row : rows) {
+            if (row > cur.row) {
+              cur.row = row;
+              cur.col = 0;
+              break;
+            }
+          }
+        } else {
+          for (auto rit = rows.rbegin(); rit != rows.rend(); ++rit) {
+            if (*rit < cur.row) {
+              cur.row = *rit;
+              cur.col = 0;
+              break;
+            }
+          }
+        }
+
+        ScrollToCursor();
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+    }
+
+    // Mouse scroll.
+    if (event.is_mouse()) {
+      auto& mouse = event.mouse();
+      int delta = 0;
+      if (mouse.button == Mouse::WheelUp) {
+        delta = -kScrollLines;
+      } else if (mouse.button == Mouse::WheelDown) {
+        delta = kScrollLines;
+      }
+      if (delta != 0) {
+        if (delta < 0) { state->chat.chat_follow = false; }
+        state->chat.chat_scroll_y = std::max(0, state->chat.chat_scroll_y + delta);
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+
+      // Click on collapsible tool parts.
+      if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+        std::scoped_lock lock(state->mtx);
+        for (auto& [key, box] : state->chat.collapsible_boxes) {
+          if (mouse.x >= box.x_min && mouse.x <= box.x_max && mouse.y >= box.y_min && mouse.y <= box.y_max) {
+            if (state->chat.expanded_parts.count(key) > 0) {
+              state->chat.expanded_parts.erase(key);
+            } else {
+              state->chat.expanded_parts.insert(key);
+            }
+            screen.PostEvent(Event::Custom);
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    // Alt+Enter sends message.
+    if (event == Event::Special({27, 13}) && !input_text.empty()) {
+      DoSend();
+      return true;
+    }
+
+    // Consume all remaining events in Normal mode.
+    return true;
+  }
+
+  auto HandleVisualEvent(Event& event) -> bool {
+    std::string text_to_copy;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (!state->visual.has_value()) {
+        state->interaction = InteractionMode::Normal;
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+
+      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event);
+
+      // Scroll viewport to follow the visual cursor.
+      if (state->visual.has_value()) {
+        int cursor_row = state->visual->cursor.row;
+        int scroll_y = state->chat.chat_scroll_y;
+        int viewport_h = state->chat.viewport_height;
+        if (viewport_h > 0) {
+          if (cursor_row < scroll_y) {
+            state->chat.chat_scroll_y = cursor_row;
+          } else if (cursor_row >= scroll_y + viewport_h) {
+            state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+          }
+        }
+      }
+
+      if (state->interaction == InteractionMode::Normal) {
+        state->visual = std::nullopt;
+      }
+
+      if (result.has_value() && !result->empty()) {
+        text_to_copy = std::move(*result);
+      }
+    }
+
+    if (!text_to_copy.empty()) {
+      CopyToClipboard(text_to_copy);
+    }
+
+    screen.PostEvent(Event::Custom);
+    return true;
+  }
+
+  auto HandleInsertEvent(Event& event) -> bool {
+    // Tab: insert a tab character into the input.
     if (event == Event::Tab) {
       input_text.insert(cursor_pos, "\t");
       cursor_pos += 1;
@@ -804,7 +1204,7 @@ struct QuickChatImpl {
       return true;
     }
 
-    // Escape: close autocomplete overlay first, then exit the view.
+    // Escape: close autocomplete overlay first, or enter Normal mode.
     if (event == Event::Escape) {
       if (command_ac_state->is_open || file_ac_state->is_open) {
         command_ac_state->is_open = false;
@@ -812,7 +1212,14 @@ struct QuickChatImpl {
         screen.PostEvent(Event::Custom);
         return true;
       }
-      nav.back();
+      {
+        std::scoped_lock lock(state->mtx);
+        state->interaction = InteractionMode::Normal;
+        int last_row = std::max(0, state->chat.content_height - 1);
+        state->chat.chat_cursor = TextCursor{last_row, 0};
+        state->chat.chat_follow = false;
+      }
+      screen.PostEvent(Event::Custom);
       return true;
     }
 
@@ -844,7 +1251,7 @@ struct QuickChatImpl {
       }
     }
 
-    // Mouse scroll.
+    // Mouse scroll in insert mode.
     if (event.is_mouse()) {
       auto& mouse = event.mouse();
       int delta = 0;
@@ -854,14 +1261,13 @@ struct QuickChatImpl {
         delta = kScrollLines;
       }
       if (delta != 0) {
-        if (delta < 0) { state->chat.chat_follow = false;
-}
+        if (delta < 0) { state->chat.chat_follow = false; }
         state->chat.chat_scroll_y = std::max(0, state->chat.chat_scroll_y + delta);
         screen.PostEvent(Event::Custom);
         return true;
       }
 
-      // Click on collapsible tool parts to toggle expand/collapse.
+      // Click on collapsible tool parts.
       if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
         std::scoped_lock lock(state->mtx);
         for (auto& [key, box] : state->chat.collapsible_boxes) {
@@ -877,12 +1283,56 @@ struct QuickChatImpl {
         }
       }
 
-      // Let mouse events through for model button/menu clicks.
       return false;
     }
 
-    // Delegate everything else to the input component (via FTXUI focus tree).
+    // Delegate everything else to the input component.
     return false;
+  }
+
+  // -- Mode transitions -------------------------------------------------------
+
+  void EnterVisualMode() {
+    std::scoped_lock lock(state->mtx);
+
+    std::vector<std::string> lines;
+    for (const auto& msg : state->chat.messages) {
+      for (size_t pidx = 0; pidx < msg.parts.size(); ++pidx) {
+        const auto& part = msg.parts[pidx];
+        auto part_type = part.contains("type") && part["type"].is_string() ? part["type"].get<std::string>() : std::string{};
+        if (part_type == "step-start" || part_type == "step-finish") { continue; }
+        std::string content;
+        if (part.contains("text") && part["text"].is_string()) {
+          content = part["text"].get<std::string>();
+        } else if (part.contains("content") && part["content"].is_string()) {
+          content = part["content"].get<std::string>();
+        }
+        if (!content.empty()) {
+          auto part_lines = SplitLines(content);
+          for (auto& line : part_lines) {
+            lines.push_back(std::move(line));
+          }
+        }
+      }
+      lines.emplace_back();
+    }
+
+    if (lines.empty()) { return; }
+
+    VisualModeState vis;
+    if (state->chat.chat_cursor.has_value()) {
+      vis.anchor = *state->chat.chat_cursor;
+      vis.cursor = *state->chat.chat_cursor;
+    } else {
+      vis.anchor = {0, 0};
+      vis.cursor = {0, 0};
+    }
+    vis.lines = std::move(lines);
+    vis.is_chat = true;
+
+    state->visual = std::move(vis);
+    state->interaction = InteractionMode::Visual;
+    screen.PostEvent(Event::Custom);
   }
 
   // -- Chat: SSE event dispatch -----------------------------------------------

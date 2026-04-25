@@ -24,6 +24,8 @@
 #include "src/components/autocomplete/CommandTypes.hpp"
 #include "src/components/autocomplete/Types.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
+#include "src/components/vim_mode/CursorOverlayNode.hpp"
+#include "src/components/vim_mode/VimMode.hpp"
 #include "src/opencode/Service.hpp"
 #include "src/rendering/HighlightTheme.hpp"
 #include "src/rendering/TreeSitterRenderer.hpp"
@@ -32,6 +34,7 @@
 
 using namespace ftxui;
 using ally::components::make_scrollable;
+using ally::components::reflect_layout;
 
 namespace ally::views {
 
@@ -47,22 +50,18 @@ using detail::StageViewState;
 using detail::TextCursor;
 using detail::VisualModeState;
 
+using ally::vim::CopyToClipboard;
+using ally::vim::ExtractSelection;
+using ally::vim::InSelection;
+using ally::vim::NormalizeSelection;
+using ally::vim::SplitLines;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-auto SplitLines(const std::string& s) -> std::vector<std::string> {
-  std::vector<std::string> lines;
-  std::istringstream stream(s);
-  std::string line;
-  while (std::getline(stream, line)) {
-    lines.push_back(std::move(line));
-  }
-  if (lines.empty()) {
-    lines.emplace_back();
-  }
-  return lines;
-}
+// SplitLines, NormalizeSelection, InSelection, ExtractSelection, CopyToClipboard
+// are now in src/components/vim_mode/VimMode.hpp (ally::vim namespace).
 
 // Extract raw code from Read tool output, stripping <content> tags and line-number prefixes.
 auto ExtractFileContent(const std::string& output) -> std::string {
@@ -95,54 +94,6 @@ auto ExtractFileContent(const std::string& output) -> std::string {
     if (!result.empty()) { result += '\n';
 }
     result += line;
-  }
-  return result;
-}
-
-void CopyToClipboard(const std::string& content) {
-  FILE* pipe = popen("pbcopy", "w");
-  if (pipe != nullptr) {
-    fwrite(content.data(), 1, content.size(), pipe);
-    pclose(pipe);
-  }
-}
-
-auto NormalizeSelection(const TextCursor& anchor, const TextCursor& cursor) -> std::pair<TextCursor, TextCursor> {
-  if (anchor.row < cursor.row || (anchor.row == cursor.row && anchor.col <= cursor.col)) {
-    return {anchor, cursor};
-  }
-  return {cursor, anchor};
-}
-
-auto InSelection(int row, int col, const TextCursor& start, const TextCursor& end) -> bool {
-  if (row < start.row || row > end.row) { return false;
-}
-  if (start.row == end.row) {
-    return col >= start.col && col <= end.col;
-  }
-  if (row == start.row) { return col >= start.col;
-}
-  if (row == end.row) { return col <= end.col;
-}
-  return true;
-}
-
-auto ExtractSelection(const std::vector<std::string>& lines, const TextCursor& anchor, const TextCursor& cursor) -> std::string {
-  auto [start, end] = NormalizeSelection(anchor, cursor);
-  if (lines.empty()) { return "";
-}
-
-  std::string result;
-  for (int row = start.row; row <= end.row && row < static_cast<int>(lines.size()); ++row) {
-    const auto& line = lines[row];
-    int col_begin = (row == start.row) ? start.col : 0;
-    int col_end = (row == end.row) ? std::min(end.col + 1, static_cast<int>(line.size())) : static_cast<int>(line.size());
-    if (col_begin < static_cast<int>(line.size())) {
-      result += line.substr(col_begin, std::max(0, col_end - col_begin));
-    }
-    if (row < end.row) {
-      result += '\n';
-    }
   }
   return result;
 }
@@ -369,6 +320,14 @@ struct StageViewImpl {
   Component model_button;
   Component model_menu;
 
+  // Cursor overlay (lives on the struct so the pointer survives through render).
+  std::optional<ally::vim::CursorOverlay> chat_overlay_;
+
+  // Message boundary tracking for J/K jumps (populated during render).
+  std::vector<ftxui::Box> msg_reflect_boxes_;
+  std::vector<bool> msg_is_user_;
+  ftxui::Box chat_body_box_;
+
   // Background threads
   std::atomic<bool> stop{false};
   std::thread artifact_event_thread;
@@ -409,9 +368,22 @@ struct StageViewImpl {
       interaction = state->interaction;
     }
 
+    // Check if visual mode is over chat content.
+    bool visual_is_chat = false;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (state->visual.has_value()) {
+        visual_is_chat = state->visual->is_chat;
+      }
+    }
+
     Element content;
-    if (interaction == InteractionMode::Visual) {
+    if (interaction == InteractionMode::Visual && visual_is_chat) {
+      content = RenderChatWithOverlay(true);
+    } else if (interaction == InteractionMode::Visual) {
       content = RenderVisualMode();
+    } else if (interaction == InteractionMode::Normal && panel == PanelMode::Chat) {
+      content = RenderChatWithOverlay(false);
     } else if (panel == PanelMode::Artifact) {
       content = RenderArtifactPanel();
     } else {
@@ -876,11 +848,101 @@ struct StageViewImpl {
       }
     }
 
-    auto chat_body = vbox(std::move(message_elements)) | flex;
+    auto chat_body = vbox(std::move(message_elements));
 
     return dbox({
         vbox({
-            make_scrollable(chat_body | vscroll_indicator, &state->chat.chat_scroll_y) | flex,
+            make_scrollable(chat_body | vscroll_indicator, &state->chat.chat_scroll_y, &state->chat.viewport_height, &state->chat.content_height) | flex,
+            separator(),
+            RenderInputBar(),
+        }),
+        vbox({
+            filler(),
+            RenderAutocompleteOverlay(),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
+        }),
+    });
+  }
+
+  /// Render chat panel with cursor overlay (Normal or Visual mode).
+  /// When `is_visual` is true, renders selection highlight; otherwise just cursor.
+  auto RenderChatWithOverlay(bool is_visual) -> Element {
+    // Build the same chat content as RenderChatPanel, but with message
+    // boundary tracking and a cursor/selection overlay.
+    Elements message_elements;
+    {
+      std::scoped_lock lock(state->mtx);
+      state->chat.frame_count++;
+
+      auto& msgs = state->chat.messages;
+      size_t total = msgs.size();
+      size_t visible = std::min(total, state->chat.visible_count);
+      size_t start_idx = total - visible;
+
+      if (start_idx > 0) {
+        size_t remaining = start_idx;
+        size_t load_count = std::min(remaining, static_cast<size_t>(30));
+        message_elements.push_back(text("  Load " + std::to_string(load_count) + " earlier messages") | dim | bold);
+        message_elements.push_back(text(""));
+      }
+
+      msg_reflect_boxes_.resize(total - start_idx);
+      msg_is_user_.resize(total - start_idx);
+      size_t box_idx = 0;
+      for (size_t idx = start_idx; idx < total; ++idx) {
+        if (idx > start_idx) {
+          message_elements.push_back(text(""));
+        }
+        auto& extra = msgs[idx].info.extra;
+        msg_is_user_[box_idx] = extra.is_object() && extra.contains("role") &&
+                                extra["role"].is_string() && extra["role"].get<std::string>() == "user";
+        message_elements.push_back(RenderMessage(msgs[idx]) | reflect_layout(msg_reflect_boxes_[box_idx]));
+        box_idx++;
+      }
+
+      if (msgs.empty() && !state->chat.is_loading) {
+        message_elements.push_back(text("  No messages yet. Send a message to start the conversation.") | dim);
+      }
+
+      if (state->chat.is_loading) {
+        const auto *label = (state->chat.frame_count % 2 == 0) ? "Thinking..." : "Thinking. . .";
+        message_elements.push_back(text("  " + std::string(label)) | dim);
+      }
+
+      if (state->chat.error_msg) {
+        message_elements.push_back(text("  Error: " + *state->chat.error_msg) | color(Color::Red));
+      }
+    }
+
+    auto chat_body = vbox(std::move(message_elements)) | reflect_layout(chat_body_box_);
+
+    // Build the cursor overlay state.
+    chat_overlay_ = std::nullopt;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (is_visual && state->visual.has_value()) {
+        auto [sel_s, sel_e] = NormalizeSelection(state->visual->anchor, state->visual->cursor);
+        chat_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Selection,
+            state->visual->cursor.row, state->visual->cursor.col,
+            sel_s.row, sel_s.col, sel_e.row, sel_e.col,
+        };
+      } else if (state->chat.chat_cursor.has_value()) {
+        chat_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Cursor,
+            state->chat.chat_cursor->row, state->chat.chat_cursor->col,
+            0, 0, 0, 0,
+        };
+      }
+    }
+
+    const ally::vim::CursorOverlay* overlay_ptr = chat_overlay_.has_value() ? &*chat_overlay_ : nullptr;
+    auto overlaid = ally::vim::make_cursor_overlay(chat_body, overlay_ptr);
+    auto wrapped = overlaid | vscroll_indicator;
+
+    return dbox({
+        vbox({
+            make_scrollable(wrapped, &state->chat.chat_scroll_y, &state->chat.viewport_height, &state->chat.content_height) | flex,
             separator(),
             RenderInputBar(),
         }),
@@ -1064,6 +1126,44 @@ struct StageViewImpl {
     return overlay | clear_under;
   }
 
+  // -- Scroll-follow-cursor ----------------------------------------------------
+
+  /// Adjusts chat_scroll_y so the cursor row is within the visible viewport.
+  /// Caller must hold state->mtx.
+  void ScrollToCursor() {
+    if (!state->chat.chat_cursor.has_value()) { return; }
+    int cursor_row = state->chat.chat_cursor->row;
+    int scroll_y = state->chat.chat_scroll_y;
+    int viewport_h = state->chat.viewport_height;
+    if (viewport_h <= 0) { return; }
+
+    if (cursor_row < scroll_y) {
+      state->chat.chat_scroll_y = cursor_row;
+    } else if (cursor_row >= scroll_y + viewport_h) {
+      state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+    }
+  }
+
+  // -- Message boundary tracking -----------------------------------------------
+
+  void UpdateMessageBoundaries() {
+    std::scoped_lock lock(state->mtx);
+    state->chat.message_screen_rows.clear();
+    state->chat.user_message_screen_rows.clear();
+
+    // Use the chat body's top edge as origin so boundary rows are in the same
+    // content-relative coordinate space as the cursor (row 0 = top of content).
+    int origin_y = chat_body_box_.y_min;
+
+    for (size_t i = 0; i < msg_reflect_boxes_.size(); ++i) {
+      int content_row = msg_reflect_boxes_[i].y_min - origin_y;
+      state->chat.message_screen_rows.push_back(content_row);
+      if (i < msg_is_user_.size() && msg_is_user_[i]) {
+        state->chat.user_message_screen_rows.push_back(content_row);
+      }
+    }
+  }
+
   // -- Event handling ---------------------------------------------------------
 
   auto HandleEvent(Event event) -> bool {
@@ -1073,6 +1173,8 @@ struct StageViewImpl {
       for (const auto& evt : events) {
         DispatchSseEvent(evt);
       }
+      // Update message boundary cache from reflect boxes after each render cycle.
+      UpdateMessageBoundaries();
       return false;
     }
 
@@ -1115,11 +1217,12 @@ struct StageViewImpl {
       return true;
     }
 
-    // 'i' enters Insert mode (focus input).
+    // 'i' enters Insert mode (focus input), clears chat cursor.
     if (event == Event::Character('i')) {
       {
         std::scoped_lock lock(state->mtx);
         state->interaction = InteractionMode::Insert;
+        state->chat.chat_cursor = std::nullopt;
       }
       input_component->TakeFocus();
       screen.PostEvent(Event::Custom);
@@ -1157,16 +1260,10 @@ struct StageViewImpl {
       panel = state->panel;
     }
 
-    // Scroll (arrow keys).
-    if (event == Event::ArrowUp || event == Event::ArrowDown) {
+    // Artifact panel: arrow keys scroll.
+    if (panel == PanelMode::Artifact && (event == Event::ArrowUp || event == Event::ArrowDown)) {
       int delta = (event == Event::ArrowUp) ? -kScrollLines : kScrollLines;
-      if (panel == PanelMode::Artifact) {
-        state->review_scroll_y = std::max(0, state->review_scroll_y + delta);
-      } else {
-        if (delta < 0) { state->chat.chat_follow = false;
-}
-        state->chat.chat_scroll_y = std::max(0, state->chat.chat_scroll_y + delta);
-      }
+      state->review_scroll_y = std::max(0, state->review_scroll_y + delta);
       screen.PostEvent(Event::Custom);
       return true;
     }
@@ -1186,6 +1283,120 @@ struct StageViewImpl {
         RefreshArtifactStages();
         LoadReviewArtifact(stage);
         return true;
+      }
+    }
+
+    // Chat panel: hjkl and arrow keys move the cursor in Normal mode.
+    if (panel == PanelMode::Chat) {
+      bool is_left  = event == Event::Character('h') || event == Event::ArrowLeft;
+      bool is_down  = event == Event::Character('j') || event == Event::ArrowDown;
+      bool is_up    = event == Event::Character('k') || event == Event::ArrowUp;
+      bool is_right = event == Event::Character('l') || event == Event::ArrowRight;
+
+      if (is_left || is_down || is_up || is_right) {
+        std::scoped_lock lock(state->mtx);
+        // Lazy-init cursor at bottom of content.
+        if (!state->chat.chat_cursor.has_value()) {
+          int last_row = std::max(0, state->chat.content_height - 1);
+          state->chat.chat_cursor = TextCursor{last_row, 0};
+          state->chat.chat_follow = false;
+        }
+        auto& cur = *state->chat.chat_cursor;
+        int max_row = std::max(0, state->chat.content_height - 1);
+
+        if (is_left) {
+          cur.col = std::max(0, cur.col - 1);
+        } else if (is_right) {
+          cur.col = cur.col + 1;
+        } else if (is_up) {
+          cur.row = std::max(0, cur.row - 1);
+        } else if (is_down) {
+          cur.row = std::min(cur.row + 1, max_row);
+        }
+
+        ScrollToCursor();
+        screen.PostEvent(Event::Custom);
+        return true;
+      }
+
+      // J (Shift+J) / Shift+Down / K (Shift+K) / Shift+Up: jump to next/previous message boundary.
+      {
+        bool is_next = event == Event::Character('J') || event == Event::Special("\x1b[1;2B");
+        bool is_prev = event == Event::Character('K') || event == Event::Special("\x1b[1;2A");
+
+        if (is_next || is_prev) {
+          std::scoped_lock lock(state->mtx);
+          if (!state->chat.chat_cursor.has_value()) {
+            int last_row = std::max(0, state->chat.content_height - 1);
+            state->chat.chat_cursor = TextCursor{last_row, 0};
+            state->chat.chat_follow = false;
+          }
+          auto& cur = *state->chat.chat_cursor;
+          auto& rows = state->chat.message_screen_rows;
+
+          if (is_next) {
+            // Find next message start after current row.
+            for (int row : rows) {
+              if (row > cur.row) {
+                cur.row = row;
+                cur.col = 0;
+                break;
+              }
+            }
+          } else {
+            // Find previous message start before current row.
+            for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+              if (*it < cur.row) {
+                cur.row = *it;
+                cur.col = 0;
+                break;
+              }
+            }
+          }
+
+          ScrollToCursor();
+          screen.PostEvent(Event::Custom);
+          return true;
+        }
+      }
+
+      // Alt+J / Alt+Down / Alt+K / Alt+Up: jump to next/previous user input ($ message).
+      {
+        bool is_next = event == Event::AltJ || event == Event::Special("\x1b[1;3B");
+        bool is_prev = event == Event::AltK || event == Event::Special("\x1b[1;3A");
+
+        if (is_next || is_prev) {
+          std::scoped_lock lock(state->mtx);
+          if (!state->chat.chat_cursor.has_value()) {
+            int last_row = std::max(0, state->chat.content_height - 1);
+            state->chat.chat_cursor = TextCursor{last_row, 0};
+            state->chat.chat_follow = false;
+          }
+          auto& cur = *state->chat.chat_cursor;
+          auto& rows = state->chat.user_message_screen_rows;
+
+          if (is_next) {
+            for (int row : rows) {
+              if (row > cur.row) {
+                cur.row = row;
+                cur.col = 0;
+                break;
+              }
+            }
+          } else {
+            for (auto rit = rows.rbegin(); rit != rows.rend(); ++rit) {
+              if (*rit < cur.row) {
+                cur.row = *rit;
+                cur.col = 0;
+                break;
+              }
+            }
+          }
+
+          ScrollToCursor();
+          screen.PostEvent(Event::Custom);
+          return true;
+        }
       }
     }
 
@@ -1247,63 +1458,46 @@ struct StageViewImpl {
   }
 
   auto HandleVisualEvent(Event& event) -> bool {
-    // Escape or 'n' exits visual mode.
-    if (event == Event::Escape || event == Event::Character('n')) {
-      {
-        std::scoped_lock lock(state->mtx);
-        state->interaction = InteractionMode::Normal;
-        state->visual = std::nullopt;
-      }
-      screen.PostEvent(Event::Custom);
-      return true;
-    }
-
-    // 'y' yanks selection to clipboard.
-    if (event == Event::Character('y')) {
-      std::string selected;
-      {
-        std::scoped_lock lock(state->mtx);
-        if (state->visual.has_value()) {
-          selected = ExtractSelection(state->visual->lines, state->visual->anchor, state->visual->cursor);
-        }
-        state->interaction = InteractionMode::Normal;
-        state->visual = std::nullopt;
-      }
-      if (!selected.empty()) {
-        CopyToClipboard(selected);
-      }
-      screen.PostEvent(Event::Custom);
-      return true;
-    }
-
-    // hjkl cursor movement.
-    if (event == Event::Character('h') || event == Event::Character('j') || event == Event::Character('k') ||
-        event == Event::Character('l')) {
+    std::string text_to_copy;
+    {
       std::scoped_lock lock(state->mtx);
-      if (!state->visual.has_value()) { return true;
-}
-      auto& vs = *state->visual;
-
-      if (event == Event::Character('h')) {
-        vs.cursor.col = std::max(0, vs.cursor.col - 1);
-      } else if (event == Event::Character('l')) {
-        int max_col = vs.cursor.row < static_cast<int>(vs.lines.size()) ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1) : 0;
-        vs.cursor.col = std::min(vs.cursor.col + 1, max_col);
-      } else if (event == Event::Character('k')) {
-        vs.cursor.row = std::max(0, vs.cursor.row - 1);
-        int max_col = vs.cursor.row < static_cast<int>(vs.lines.size()) ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1) : 0;
-        vs.cursor.col = std::min(vs.cursor.col, max_col);
-      } else if (event == Event::Character('j')) {
-        vs.cursor.row = std::min(vs.cursor.row + 1, std::max(0, static_cast<int>(vs.lines.size()) - 1));
-        int max_col = vs.cursor.row < static_cast<int>(vs.lines.size()) ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1) : 0;
-        vs.cursor.col = std::min(vs.cursor.col, max_col);
+      if (!state->visual.has_value()) {
+        state->interaction = InteractionMode::Normal;
+        screen.PostEvent(Event::Custom);
+        return true;
       }
 
-      screen.PostEvent(Event::Custom);
-      return true;
+      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event);
+
+      // Scroll viewport to follow the visual cursor in the chat panel.
+      if (state->visual.has_value() && state->visual->is_chat) {
+        int cursor_row = state->visual->cursor.row;
+        int scroll_y = state->chat.chat_scroll_y;
+        int viewport_h = state->chat.viewport_height;
+        if (viewport_h > 0) {
+          if (cursor_row < scroll_y) {
+            state->chat.chat_scroll_y = cursor_row;
+          } else if (cursor_row >= scroll_y + viewport_h) {
+            state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+          }
+        }
+      }
+
+      // If mode changed back to Normal, clear visual state.
+      if (state->interaction == InteractionMode::Normal) {
+        state->visual = std::nullopt;
+      }
+
+      if (result.has_value() && !result->empty()) {
+        text_to_copy = std::move(*result);
+      }
     }
 
-    // Consume all other keys in visual mode.
+    if (!text_to_copy.empty()) {
+      CopyToClipboard(text_to_copy);
+    }
+
+    screen.PostEvent(Event::Custom);
     return true;
   }
 
@@ -1320,6 +1514,12 @@ struct StageViewImpl {
       {
         std::scoped_lock lock(state->mtx);
         state->interaction = InteractionMode::Normal;
+        // Initialize chat cursor when entering Normal on chat panel.
+        if (state->panel == PanelMode::Chat) {
+          int last_row = std::max(0, state->chat.content_height - 1);
+          state->chat.chat_cursor = TextCursor{last_row, 0};
+          state->chat.chat_follow = false;
+        }
       }
       // Keep focus on input_component — the CatchEvent wrapper handles
       // Normal-mode keys before FTXUI routes them to the focused child.
@@ -1423,17 +1623,48 @@ struct StageViewImpl {
     std::scoped_lock lock(state->mtx);
 
     std::vector<std::string> lines;
+    bool is_chat = false;
+
     if (state->panel == PanelMode::Artifact && state->review_content.has_value()) {
       lines = SplitLines(*state->review_content);
+    } else if (state->panel == PanelMode::Chat) {
+      // Build lines from chat messages for selection.
+      for (const auto& msg : state->chat.messages) {
+        for (size_t pidx = 0; pidx < msg.parts.size(); ++pidx) {
+          const auto& part = msg.parts[pidx];
+          auto part_type = part.contains("type") && part["type"].is_string() ? part["type"].get<std::string>() : std::string{};
+          if (part_type == "step-start" || part_type == "step-finish") { continue; }
+          std::string content;
+          if (part.contains("text") && part["text"].is_string()) {
+            content = part["text"].get<std::string>();
+          } else if (part.contains("content") && part["content"].is_string()) {
+            content = part["content"].get<std::string>();
+          }
+          if (!content.empty()) {
+            auto part_lines = SplitLines(content);
+            for (auto& line : part_lines) {
+              lines.push_back(std::move(line));
+            }
+          }
+        }
+        lines.emplace_back();  // separator between messages
+      }
+      is_chat = true;
     }
 
-    if (lines.empty()) { return;  // nothing to select
-}
+    if (lines.empty()) { return; }
 
     VisualModeState vs;
-    vs.anchor = {0, 0};
-    vs.cursor = {0, 0};
+    // Start from current cursor position if available.
+    if (is_chat && state->chat.chat_cursor.has_value()) {
+      vs.anchor = *state->chat.chat_cursor;
+      vs.cursor = *state->chat.chat_cursor;
+    } else {
+      vs.anchor = {0, 0};
+      vs.cursor = {0, 0};
+    }
     vs.lines = std::move(lines);
+    vs.is_chat = is_chat;
 
     state->visual = std::move(vs);
     state->interaction = InteractionMode::Visual;

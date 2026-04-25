@@ -11,35 +11,24 @@
 #include <unordered_set>
 #include <vector>
 
+#include "src/components/vim_mode/VimMode.hpp"
 #include "src/opencode/Types.hpp"
 
 namespace ally::views::detail {
+
+// Re-export shared vim types into this namespace for existing code.
+using ally::vim::InteractionMode;
+using ally::vim::TextCursor;
+using ally::vim::VisualModeState;
 
 enum class PanelMode : std::uint8_t {
   Artifact,
   Chat,
 };
 
-enum class InteractionMode : std::uint8_t {
-  Normal,
-  Visual,
-  Insert,
-};
-
 enum class ArtifactViewMode : std::uint8_t {
   Rendered,
   Raw,
-};
-
-struct TextCursor {
-  int row = 0;
-  int col = 0;
-};
-
-struct VisualModeState {
-  TextCursor anchor;
-  TextCursor cursor;
-  std::vector<std::string> lines;
 };
 
 struct CachedPartRender {
@@ -74,6 +63,15 @@ struct ChatPanelState {
   int selected_model_idx = 0;
   bool model_menu_open = false;
   std::optional<std::string> last_seen_provider;
+
+  // Chat cursor for Normal mode navigation (screen-coordinate row/col).
+  std::optional<TextCursor> chat_cursor;
+
+  // Message boundary tracking (populated during rendering).
+  std::vector<int> message_screen_rows;       // content-y where each message starts
+  std::vector<int> user_message_screen_rows;  // rows for user ($ input) messages only
+  int content_height = 0;                     // total rendered content height
+  int viewport_height = 0;                    // visible viewport height (from scrollable node)
 };
 
 struct StageViewState {

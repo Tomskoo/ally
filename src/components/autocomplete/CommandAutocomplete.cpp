@@ -162,7 +162,7 @@ auto CommandAutocompleteComponent(const std::shared_ptr<CommandAutocompleteState
     std::scoped_lock lock(state->mutex);
 
     if (!state->is_open || !state->commands_cache.has_value()) {
-      return text("");
+      return emptyElement();
     }
 
     auto& cache = *state->commands_cache;

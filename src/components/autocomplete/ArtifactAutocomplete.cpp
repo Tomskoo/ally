@@ -164,7 +164,7 @@ auto ArtifactAutocompleteComponent(const std::shared_ptr<ArtifactAutocompleteSta
     std::scoped_lock lock(state->mutex);
 
     if (!state->is_open || !state->artifacts_cache.has_value()) {
-      return text("");
+      return emptyElement();
     }
 
     auto& cache = *state->artifacts_cache;

@@ -8,10 +8,13 @@ using namespace ftxui;
 
 namespace ally::components {
 
-auto make_scrollable(Element child, int* scroll_y) -> Element {
+auto make_scrollable(Element child, int* scroll_y, int* viewport_height_out,
+                     int* content_height_out) -> Element {
   class Impl : public Node {
    public:
-    Impl(Element child, int* scroll_y) : Node({std::move(child)}), scroll_y_(scroll_y) {}
+    Impl(Element child, int* scroll_y, int* viewport_height_out, int* content_height_out)
+        : Node({std::move(child)}), scroll_y_(scroll_y), viewport_height_out_(viewport_height_out),
+          content_height_out_(content_height_out) {}
     void ComputeRequirement() override {
       children_[0]->ComputeRequirement();
       requirement_ = children_[0]->requirement();
@@ -21,6 +24,10 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
     void SetBox(Box box) override {
       Node::SetBox(box);
       const int viewport_h = box.y_max - box.y_min + 1;
+
+      if (viewport_height_out_ != nullptr) {
+        *viewport_height_out_ = viewport_h;
+      }
 
       // First pass: lay out child at the correct width so wrapping elements
       // (flexbox/paragraph) settle at their true wrapped height.
@@ -45,6 +52,12 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
       child_box.y_min = box.y_min - *scroll_y_;
       child_box.y_max = child_box.y_min + content_h - 1;
       children_[0]->SetBox(child_box);
+
+      // Write content height after final layout so the value is stable.
+      if (content_height_out_ != nullptr) {
+        children_[0]->ComputeRequirement();
+        *content_height_out_ = children_[0]->requirement().min_y;
+      }
     }
     void Render(Screen& screen) override {
       Box old_stencil = screen.stencil;
@@ -55,9 +68,11 @@ auto make_scrollable(Element child, int* scroll_y) -> Element {
 
    private:
     int* scroll_y_;
+    int* viewport_height_out_;
+    int* content_height_out_;
     int content_req_h_ = 0;
   };
-  return std::make_shared<Impl>(std::move(child), scroll_y);
+  return std::make_shared<Impl>(std::move(child), scroll_y, viewport_height_out, content_height_out);
 }
 
 auto cap_height(Element child) -> Element {
@@ -76,6 +91,29 @@ auto cap_height(Element child) -> Element {
     void Render(Screen& screen) override { children_[0]->Render(screen); }
   };
   return std::make_shared<Impl>(std::move(child));
+}
+
+auto reflect_layout(Box& box) -> Decorator {
+  return [&box](Element child) -> Element {
+    class Impl : public Node {
+     public:
+      Impl(Element elem, Box& target) : Node({std::move(elem)}), box_(target) {}
+      void ComputeRequirement() override {
+        children_[0]->ComputeRequirement();
+        requirement_ = children_[0]->requirement();
+      }
+      void SetBox(Box box) override {
+        box_ = box;
+        Node::SetBox(box);
+        children_[0]->SetBox(box);
+      }
+      void Render(Screen& screen) override { children_[0]->Render(screen); }
+
+     private:
+      Box& box_;
+    };
+    return std::make_shared<Impl>(std::move(child), box);
+  };
 }
 
 }  // namespace ally::components

@@ -11,9 +11,14 @@
 #include <unordered_set>
 #include <vector>
 
+#include "src/components/vim_mode/VimMode.hpp"
 #include "src/opencode/Types.hpp"
 
 namespace ally::views::detail {
+
+using ally::vim::InteractionMode;
+using ally::vim::TextCursor;
+using ally::vim::VisualModeState;
 
 struct QuickChatCachedPartRender {
   size_t content_length = 0;
@@ -45,10 +50,26 @@ struct QuickChatPanelState {
   int selected_model_idx = 0;
   bool model_menu_open = false;
   std::optional<std::string> last_seen_provider;
+
+  // Chat cursor for Normal mode navigation (screen-coordinate row/col).
+  std::optional<TextCursor> chat_cursor;
+
+  // Message boundary tracking (populated during rendering).
+  std::vector<int> message_screen_rows;
+  std::vector<int> user_message_screen_rows;  // rows for user ($ input) messages only
+  int content_height = 0;
+  int viewport_height = 0;
 };
 
 struct QuickChatViewState {
   std::mutex mtx;
+
+  // Vim-like interaction mode (starts in Insert to preserve current behavior).
+  InteractionMode interaction = InteractionMode::Insert;
+
+  // Visual mode state (only valid when interaction == Visual).
+  std::optional<VisualModeState> visual;
+
   QuickChatPanelState chat;
 };
 

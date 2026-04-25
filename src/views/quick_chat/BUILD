@@ -14,6 +14,7 @@ cc_library(
         "//src/components/autocomplete:file_autocomplete",
         "//src/components/autocomplete:command_autocomplete",
         "//src/components/scrollable",
+        "//src/components/vim_mode",
         "//src/opencode:service",
         "//src/opencode:types",
         "//src/rendering:highlight_theme",

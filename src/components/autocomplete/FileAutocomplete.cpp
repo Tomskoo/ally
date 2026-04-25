@@ -320,7 +320,7 @@ auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::fi
     std::scoped_lock lock(state->mutex);
 
     if (!state->is_open || !state->tree_cache.has_value()) {
-      return text("");
+      return emptyElement();
     }
 
     auto& tree = *state->tree_cache;
