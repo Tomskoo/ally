@@ -1,5 +1,7 @@
 #pragma once
 
+#include "src/configuration/InputConfig.hpp"
+
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <functional>
@@ -31,7 +33,7 @@ void SelectCurrentCommand(CommandAutocompleteState& state, const std::string& cu
 /// Routes keyboard events when the overlay is open.
 /// Returns true if the event was consumed.
 auto HandleCommandKeydown(CommandAutocompleteState& state, const std::string& current_text, std::string& text_out,
-                          const ftxui::Event& event) -> bool;
+                          const ftxui::Event& event, const ally::configuration::InputConfig& input_config) -> bool;
 
 /// Creates the FTXUI overlay component for command autocomplete.
 /// on_insert receives the full updated text after a command is selected.

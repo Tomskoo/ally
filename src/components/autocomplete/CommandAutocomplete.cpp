@@ -110,7 +110,7 @@ void SelectCurrentCommand(CommandAutocompleteState& state, const std::string& cu
 // ---------------------------------------------------------------------------
 
 auto HandleCommandKeydown(CommandAutocompleteState& state, const std::string& current_text, std::string& text_out,
-                          const ftxui::Event& event) -> bool {
+                          const ftxui::Event& event, const ally::configuration::InputConfig& input_config) -> bool {
   if (!state.is_open) {
     return false;
   }
@@ -122,27 +122,27 @@ auto HandleCommandKeydown(CommandAutocompleteState& state, const std::string& cu
   auto filtered = GetFilteredCommands(*state.commands_cache, state.query);
   int item_count = static_cast<int>(filtered.size());
 
-  if (event == ftxui::Event::ArrowDown) {
+  if (input_config.autocomplete.next.matches(event)) {
     if (item_count > 0) {
       state.selected_index = std::min(state.selected_index + 1, item_count - 1);
     }
     return true;
   }
 
-  if (event == ftxui::Event::ArrowUp) {
+  if (input_config.autocomplete.prev.matches(event)) {
     if (item_count > 0) {
       state.selected_index = std::max(state.selected_index - 1, 0);
     }
     return true;
   }
 
-  if (event == ftxui::Event::Escape) {
+  if (input_config.autocomplete.dismiss.matches(event)) {
     state.is_open = false;
     state.trigger_position = std::nullopt;
     return true;
   }
 
-  if (event == ftxui::Event::Return || event == ftxui::Event::Tab) {
+  if (input_config.autocomplete.select.matches(event)) {
     SelectCurrentCommand(state, current_text, text_out);
     return true;
   }

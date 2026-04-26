@@ -17,6 +17,7 @@ cc_library(
     visibility = ["//src:__subpackages__"],
     deps = [
         ":nav_state",
+        "//src/configuration:input_config",
         "//src/models",
         "//src/opencode:state",
         "//src/providers/artifact",
@@ -40,6 +41,7 @@ cc_binary(
     visibility = ["//:__pkg__"],
     deps = [
         "//src/configuration",
+        "//src/configuration:input_config",
         "//src/commands/storage",
         "//src/commands/task",
         "//src/components/bottom_bar",

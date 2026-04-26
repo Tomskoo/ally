@@ -8,6 +8,8 @@
 
 #include <ftxui/component/event.hpp>
 
+#include "src/configuration/InputConfig.hpp"
+
 namespace ally::vim {
 
 // ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ void CopyToClipboard(const std::string& content);
 /// On exit (Escape/n) or yank, sets mode to Normal and clears visual state.
 auto HandleVisualKeyEvent(VisualModeState& vs,
                           InteractionMode& mode,
-                          const ftxui::Event& event) -> std::optional<std::string>;
+                          const ftxui::Event& event,
+                          const configuration::InputConfig& input_config) -> std::optional<std::string>;
 
 }  // namespace ally::vim

@@ -21,6 +21,7 @@
 #include "src/components/splash/Splash.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
 #include "src/configuration/Configuration.hpp"
+#include "src/configuration/InputConfig.hpp"
 #include "src/opencode/Error.hpp"
 #include "src/opencode/Lifecycle.hpp"
 #include "src/opencode/Service.hpp"
@@ -56,10 +57,6 @@ auto has_flag(int argc, char** argv, const char* flag) -> bool {
   }
   return false;
 }
-// ESC (0x1b) is the prefix byte terminals emit for Meta/Alt modifiers —
-// e.g. Meta+P arrives as the two-byte sequence {ESC, 'p'}.
-constexpr char kEscByte = 27;
-
 auto parent_state(const ally::NavState& current) -> std::optional<ally::NavState> {
   return std::visit(
       overloaded{
@@ -176,8 +173,9 @@ auto handle_mouse_wheel(Event event, ally::Navigator& nav, const Component& acti
   return true;
 }
 
-auto handle_escape(const Event& event, ally::Navigator& nav, const Component& active_proxy) -> std::optional<bool> {
-  if (event != Event::Escape) {
+auto handle_escape(const Event& event, ally::Navigator& nav, const Component& active_proxy,
+                   const ally::configuration::InputConfig& input_config) -> std::optional<bool> {
+  if (!input_config.navigation.escape.matches(event)) {
     return std::nullopt;
   }
   auto target = nav.focus_target();
@@ -198,8 +196,11 @@ auto handle_escape(const Event& event, ally::Navigator& nav, const Component& ac
   return false;
 }
 
-auto handle_navbar_cycle(const Event& event, ally::Navigator& nav, const AppComponents& components) -> std::optional<bool> {
-  if (event != Event::Character(']') && event != Event::Character('[')) {
+auto handle_navbar_cycle(const Event& event, ally::Navigator& nav, const AppComponents& components,
+                        const ally::configuration::InputConfig& input_config) -> std::optional<bool> {
+  bool is_right = input_config.navigation.cycle_right.matches(event);
+  bool is_left  = input_config.navigation.cycle_left.matches(event);
+  if (!is_right && !is_left) {
     return std::nullopt;
   }
   if (std::holds_alternative<ally::StageViewState>(nav.current())) {
@@ -212,7 +213,7 @@ auto handle_navbar_cycle(const Event& event, ally::Navigator& nav, const AppComp
   nav.set_focus(ally::FocusTarget::Navbar);
   components.nav_bar->TakeFocus();
   auto cursor = nav.navbar_cursor();
-  if (event == Event::Character(']')) {
+  if (is_right) {
     auto idx = cursor.has_value() ? (*cursor + 1) % count : size_t{0};
     nav.set_navbar_cursor(idx);
   } else {
@@ -239,17 +240,18 @@ auto handle_enter_on_navbar(const Event& event, ally::Navigator& nav, const AppC
   return true;
 }
 
-auto handle_app_event(const Event& event, ally::Navigator& nav, const AppComponents& components) -> bool {
+auto handle_app_event(const Event& event, ally::Navigator& nav, const AppComponents& components,
+                      const ally::configuration::InputConfig& input_config) -> bool {
   // 1. Mouse wheel
   if (auto handled = handle_mouse_wheel(event, nav, components.active_proxy); handled.has_value()) {
     return *handled;
   }
   // 2a. Escape — focus reset / overlay dismiss / parent nav
-  if (auto handled = handle_escape(event, nav, components.active_proxy); handled.has_value()) {
+  if (auto handled = handle_escape(event, nav, components.active_proxy, input_config); handled.has_value()) {
     return *handled;
   }
   // 2b. [ and ] — stage nav in StageView, navbar cursor elsewhere
-  if (auto handled = handle_navbar_cycle(event, nav, components); handled.has_value()) {
+  if (auto handled = handle_navbar_cycle(event, nav, components, input_config); handled.has_value()) {
     return *handled;
   }
   // 2c. Arrow keys — focus MainView, fall through
@@ -263,13 +265,13 @@ auto handle_app_event(const Event& event, ally::Navigator& nav, const AppCompone
     return true;
   }
   // 4. Meta+P — focus provider bar
-  if (event == Event::Special({kEscByte, 'p'})) {
+  if (input_config.navigation.focus_provider.matches(event)) {
     nav.set_focus(ally::FocusTarget::ProviderBar);
     components.bottom_bar->TakeFocus();
     return true;
   }
   // 5. Meta+W — open/reset Quick Chat
-  if (event == Event::Special({kEscByte, 'w'})) {
+  if (input_config.navigation.toggle_quick_chat.matches(event)) {
     if (std::holds_alternative<ally::QuickChatState>(nav.current())) {
       nav.replace(ally::QuickChatState{});
     } else {
@@ -304,9 +306,11 @@ auto main(int argc, char* argv[]) -> int {
 
     auto opencode_config = ally::configuration::LoadOpenCodeConfig(project_root);
     auto rendering_config = ally::configuration::LoadRenderingConfig(project_root);
+    auto input_config = ally::configuration::DefaultInputConfig();
 
     ally::AppContext ctx{
         .project_root = project_root,
+        .input_config = input_config,
         .task_provider = provider,
         .workflow_service = workflow_service,
         .artifact_service = artifact_service,
@@ -422,7 +426,7 @@ auto main(int argc, char* argv[]) -> int {
         .nav_bar = nav_bar_component,
         .bottom_bar = bottom_bar_component,
     };
-    auto main_component = CatchEvent(renderer, [&](const Event& event) -> bool { return handle_app_event(event, nav, components); });
+    auto main_component = CatchEvent(renderer, [&](const Event& event) -> bool { return handle_app_event(event, nav, components, ctx.input_config); });
 
     if (show_splash) {
       auto splash_done = std::make_shared<bool>(false);

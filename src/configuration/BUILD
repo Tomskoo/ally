@@ -16,3 +16,13 @@ cc_library(
         "@yaml-cpp",
     ],
 )
+
+cc_library(
+    name = "input_config",
+    srcs = ["InputConfig.cpp"],
+    hdrs = ["InputConfig.hpp"],
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        "@ftxui//:component",
+    ],
+)

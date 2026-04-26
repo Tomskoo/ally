@@ -1179,7 +1179,7 @@ struct StageViewImpl {
     }
 
     // Tab toggles panel (Artifact ↔ Chat). Also consume TabReverse.
-    if (event == Event::Tab || event == Event::TabReverse) {
+    if (ctx.input_config.chat.toggle_panel.matches(event)) {
       {
         std::scoped_lock lock(state->mtx);
         state->panel = (state->panel == PanelMode::Artifact) ? PanelMode::Chat : PanelMode::Artifact;
@@ -1206,19 +1206,21 @@ struct StageViewImpl {
   }
 
   auto HandleNormalEvent(Event& event) -> bool {
+    const auto& keys = ctx.input_config;
+
     // Let Escape bubble up to main.cpp for parent navigation.
-    if (event == Event::Escape) {
+    if (keys.navigation.escape.matches(event)) {
       return false;
     }
 
     // 'v' enters Visual mode.
-    if (event == Event::Character('v')) {
+    if (keys.vim.enter_visual.matches(event)) {
       EnterVisualMode();
       return true;
     }
 
     // 'i' enters Insert mode (focus input), clears chat cursor.
-    if (event == Event::Character('i')) {
+    if (keys.vim.enter_insert.matches(event)) {
       {
         std::scoped_lock lock(state->mtx);
         state->interaction = InteractionMode::Insert;
@@ -1232,7 +1234,7 @@ struct StageViewImpl {
     // Tab is handled in HandleEvent before mode dispatch, so '=' is unused.
 
     // Stage navigation with [ and ].
-    if (event == Event::Character(']') || event == Event::Character('[')) {
+    if (keys.navigation.cycle_right.matches(event) || keys.navigation.cycle_left.matches(event)) {
       std::string target;
       {
         std::scoped_lock lock(state->mtx);
@@ -1241,9 +1243,9 @@ struct StageViewImpl {
         if (it == stages.end()) { return true;
 }
 
-        if (event == Event::Character(']') && std::next(it) != stages.end()) {
+        if (keys.navigation.cycle_right.matches(event) && std::next(it) != stages.end()) {
           target = *std::next(it);
-        } else if (event == Event::Character('[') && it != stages.begin()) {
+        } else if (keys.navigation.cycle_left.matches(event) && it != stages.begin()) {
           target = *std::prev(it);
         } else {
           return true;
@@ -1261,8 +1263,8 @@ struct StageViewImpl {
     }
 
     // Artifact panel: arrow keys scroll.
-    if (panel == PanelMode::Artifact && (event == Event::ArrowUp || event == Event::ArrowDown)) {
-      int delta = (event == Event::ArrowUp) ? -kScrollLines : kScrollLines;
+    if (panel == PanelMode::Artifact && (keys.artifact.scroll_up.matches(event) || keys.artifact.scroll_down.matches(event))) {
+      int delta = keys.artifact.scroll_up.matches(event) ? -kScrollLines : kScrollLines;
       state->review_scroll_y = std::max(0, state->review_scroll_y + delta);
       screen.PostEvent(Event::Custom);
       return true;
@@ -1270,7 +1272,7 @@ struct StageViewImpl {
 
     if (panel == PanelMode::Artifact) {
       // Toggle rendered/raw.
-      if (event == Event::Character('r')) {
+      if (keys.artifact.toggle_render.matches(event)) {
         std::scoped_lock lock(state->mtx);
         state->review_view_mode =
             (state->review_view_mode == ArtifactViewMode::Rendered) ? ArtifactViewMode::Raw : ArtifactViewMode::Rendered;
@@ -1279,7 +1281,7 @@ struct StageViewImpl {
       }
 
       // Force reload.
-      if (event == Event::Character('R')) {
+      if (keys.artifact.force_reload.matches(event)) {
         RefreshArtifactStages();
         LoadReviewArtifact(stage);
         return true;
@@ -1288,10 +1290,10 @@ struct StageViewImpl {
 
     // Chat panel: hjkl and arrow keys move the cursor in Normal mode.
     if (panel == PanelMode::Chat) {
-      bool is_left  = event == Event::Character('h') || event == Event::ArrowLeft;
-      bool is_down  = event == Event::Character('j') || event == Event::ArrowDown;
-      bool is_up    = event == Event::Character('k') || event == Event::ArrowUp;
-      bool is_right = event == Event::Character('l') || event == Event::ArrowRight;
+      bool is_left  = keys.vim.left.matches(event);
+      bool is_down  = keys.vim.down.matches(event);
+      bool is_up    = keys.vim.up.matches(event);
+      bool is_right = keys.vim.right.matches(event);
 
       if (is_left || is_down || is_up || is_right) {
         std::scoped_lock lock(state->mtx);
@@ -1321,8 +1323,8 @@ struct StageViewImpl {
 
       // J (Shift+J) / Shift+Down / K (Shift+K) / Shift+Up: jump to next/previous message boundary.
       {
-        bool is_next = event == Event::Character('J') || event == Event::Special("\x1b[1;2B");
-        bool is_prev = event == Event::Character('K') || event == Event::Special("\x1b[1;2A");
+        bool is_next = keys.chat.next_message.matches(event);
+        bool is_prev = keys.chat.prev_message.matches(event);
 
         if (is_next || is_prev) {
           std::scoped_lock lock(state->mtx);
@@ -1362,8 +1364,8 @@ struct StageViewImpl {
 
       // Alt+J / Alt+Down / Alt+K / Alt+Up: jump to next/previous user input ($ message).
       {
-        bool is_next = event == Event::AltJ || event == Event::Special("\x1b[1;3B");
-        bool is_prev = event == Event::AltK || event == Event::Special("\x1b[1;3A");
+        bool is_next = keys.chat.next_user_message.matches(event);
+        bool is_prev = keys.chat.prev_user_message.matches(event);
 
         if (is_next || is_prev) {
           std::scoped_lock lock(state->mtx);
@@ -1423,7 +1425,7 @@ struct StageViewImpl {
     }
 
     // Alt+Enter sends message.
-    if (event == Event::Special({27, 13}) && !input_text.empty()) {
+    if (keys.chat.send_message.matches(event) && !input_text.empty()) {
       DoSend();
       return true;
     }
@@ -1467,7 +1469,7 @@ struct StageViewImpl {
         return true;
       }
 
-      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event);
+      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event, ctx.input_config);
 
       // Scroll viewport to follow the visual cursor in the chat panel.
       if (state->visual.has_value() && state->visual->is_chat) {
@@ -1502,8 +1504,10 @@ struct StageViewImpl {
   }
 
   auto HandleInsertEvent(Event& event) -> bool {
+    const auto& keys = ctx.input_config;
+
     // Escape: close any open autocomplete overlay first, or exit insert mode.
-    if (event == Event::Escape) {
+    if (keys.navigation.escape.matches(event)) {
       if (command_ac_state->is_open || artifact_ac_state->is_open || file_ac_state->is_open) {
         command_ac_state->is_open = false;
         artifact_ac_state->is_open = false;
@@ -1528,7 +1532,7 @@ struct StageViewImpl {
     }
 
     // Alt+Enter sends message, stay in insert mode.
-    if (event == Event::Special({27, 13}) && !input_text.empty()) {
+    if (keys.chat.send_message.matches(event) && !input_text.empty()) {
       DoSend();
       return true;
     }
@@ -1538,7 +1542,7 @@ struct StageViewImpl {
       std::scoped_lock lock(command_ac_state->mutex);
       auto trigger = command_ac_state->trigger_position;
       std::string new_text;
-      if (autocomplete::HandleCommandKeydown(*command_ac_state, input_text, new_text, event)) {
+      if (autocomplete::HandleCommandKeydown(*command_ac_state, input_text, new_text, event, keys)) {
         if (!new_text.empty() && trigger.has_value()) {
           input_text = new_text;
           auto space_pos = new_text.find(' ', *trigger);
@@ -1553,7 +1557,7 @@ struct StageViewImpl {
       std::scoped_lock lock(artifact_ac_state->mutex);
       auto trigger = artifact_ac_state->trigger_position;
       std::string new_text;
-      if (autocomplete::HandleArtifactKeydown(*artifact_ac_state, input_text, new_text, event)) {
+      if (autocomplete::HandleArtifactKeydown(*artifact_ac_state, input_text, new_text, event, keys)) {
         if (!new_text.empty() && trigger.has_value()) {
           input_text = new_text;
           auto space_pos = new_text.find(' ', *trigger);
@@ -2207,7 +2211,7 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
           impl->input_text = before + insertion + " " + after;
           impl->cursor_pos = static_cast<int>(before.size() + insertion.size() + 1);
         }
-      });
+      }, ctx.input_config);
 
   // -- Background listeners ---------------------------------------------------
 

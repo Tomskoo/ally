@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#include "src/configuration/InputConfig.hpp"
 #include "src/models/Task.hpp"
 #include "src/opencode/State.hpp"
 #include "src/providers/artifact/ArtifactService.hpp"
@@ -21,6 +22,7 @@ namespace ally {
 
 struct AppContext {
   std::filesystem::path project_root;
+  const configuration::InputConfig& input_config;
   providers::FileTaskProvider& task_provider;
   providers::WorkflowService& workflow_service;
   providers::ArtifactService& artifact_service;

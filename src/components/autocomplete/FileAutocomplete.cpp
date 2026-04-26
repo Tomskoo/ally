@@ -258,7 +258,8 @@ void SelectCurrentItem(AutocompleteState& state, const std::vector<DirTreeNode*>
 // ---------------------------------------------------------------------------
 
 auto HandleAutocompleteKeydown(AutocompleteState& state, const std::vector<DirTreeNode*>& items, const ftxui::Event& event,
-                               const std::function<void()>& on_select) -> bool {
+                               const std::function<void()>& on_select,
+                               const ally::configuration::InputConfig& input_config) -> bool {
   if (!state.is_open) {
     return false;
   }
@@ -266,27 +267,27 @@ auto HandleAutocompleteKeydown(AutocompleteState& state, const std::vector<DirTr
   int breadcrumb_offset = state.current_path.empty() ? 0 : 1;
   int total_rows = static_cast<int>(items.size()) + breadcrumb_offset;
 
-  if (event == ftxui::Event::ArrowDown) {
+  if (input_config.autocomplete.next.matches(event)) {
     if (total_rows > 0) {
       state.selected_index = (state.selected_index + 1) % total_rows;
     }
     return true;
   }
 
-  if (event == ftxui::Event::ArrowUp) {
+  if (input_config.autocomplete.prev.matches(event)) {
     if (total_rows > 0) {
       state.selected_index = (state.selected_index - 1 + total_rows) % total_rows;
     }
     return true;
   }
 
-  if (event == ftxui::Event::Escape) {
+  if (input_config.autocomplete.dismiss.matches(event)) {
     state.is_open = false;
     state.trigger_position = std::nullopt;
     return true;
   }
 
-  if (event == ftxui::Event::Return || event == ftxui::Event::Tab) {
+  if (input_config.autocomplete.select.matches(event)) {
     // Check if breadcrumb row is selected (index 0 when current_path
     // is non-empty means the breadcrumb).
     if (!state.current_path.empty() && state.selected_index == 0) {
@@ -310,7 +311,8 @@ auto HandleAutocompleteKeydown(AutocompleteState& state, const std::vector<DirTr
 // ---------------------------------------------------------------------------
 
 auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::filesystem::path project_root,
-                               ftxui::ScreenInteractive& screen, std::function<void(const std::string& insertion)> on_insert)
+                               ftxui::ScreenInteractive& screen, std::function<void(const std::string& insertion)> on_insert,
+                               const ally::configuration::InputConfig& input_config)
     -> ftxui::Component {
   using namespace ftxui;
 
@@ -381,7 +383,7 @@ auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::fi
   });
 
   // Wrap with CatchEvent for keyboard/mouse handling.
-  component = CatchEvent(component, [state, root, &screen, on_insert](const Event& event) -> bool {
+  component = CatchEvent(component, [state, root, &screen, on_insert, &input_config](const Event& event) -> bool {
     std::scoped_lock lock(state->mutex);
 
     if (!state->is_open || !state->tree_cache.has_value()) {
@@ -447,7 +449,7 @@ auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::fi
       }
     };
 
-    return HandleAutocompleteKeydown(*state, items, event, on_select);
+    return HandleAutocompleteKeydown(*state, items, event, on_select, input_config);
   });
 
   return component;

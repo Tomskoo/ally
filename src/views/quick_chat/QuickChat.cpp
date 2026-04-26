@@ -969,20 +969,22 @@ struct QuickChatImpl {
   }
 
   auto HandleNormalEvent(Event& event) -> bool {
+    const auto& keys = ctx.input_config;
+
     // Escape in Normal mode: exit the view.
-    if (event == Event::Escape) {
+    if (keys.navigation.escape.matches(event)) {
       nav.back();
       return true;
     }
 
     // 'v' enters Visual mode.
-    if (event == Event::Character('v')) {
+    if (keys.vim.enter_visual.matches(event)) {
       EnterVisualMode();
       return true;
     }
 
     // 'i' enters Insert mode.
-    if (event == Event::Character('i')) {
+    if (keys.vim.enter_insert.matches(event)) {
       {
         std::scoped_lock lock(state->mtx);
         state->interaction = InteractionMode::Insert;
@@ -995,10 +997,10 @@ struct QuickChatImpl {
 
     // hjkl and arrow keys move the cursor.
     {
-      bool is_left  = event == Event::Character('h') || event == Event::ArrowLeft;
-      bool is_down  = event == Event::Character('j') || event == Event::ArrowDown;
-      bool is_up    = event == Event::Character('k') || event == Event::ArrowUp;
-      bool is_right = event == Event::Character('l') || event == Event::ArrowRight;
+      bool is_left  = keys.vim.left.matches(event);
+      bool is_down  = keys.vim.down.matches(event);
+      bool is_up    = keys.vim.up.matches(event);
+      bool is_right = keys.vim.right.matches(event);
 
       if (is_left || is_down || is_up || is_right) {
         std::scoped_lock lock(state->mtx);
@@ -1028,8 +1030,8 @@ struct QuickChatImpl {
 
     // J (Shift+J) / Shift+Down / K (Shift+K) / Shift+Up: jump to next/previous message boundary.
     {
-      bool is_next = event == Event::Character('J') || event == Event::Special("\x1b[1;2B");
-      bool is_prev = event == Event::Character('K') || event == Event::Special("\x1b[1;2A");
+      bool is_next = keys.chat.next_message.matches(event);
+      bool is_prev = keys.chat.prev_message.matches(event);
 
       if (is_next || is_prev) {
         std::scoped_lock lock(state->mtx);
@@ -1067,8 +1069,8 @@ struct QuickChatImpl {
 
     // Alt+J / Alt+Down / Alt+K / Alt+Up: jump to next/previous user input ($ message).
     {
-      bool is_next = event == Event::AltJ || event == Event::Special("\x1b[1;3B");
-      bool is_prev = event == Event::AltK || event == Event::Special("\x1b[1;3A");
+      bool is_next = keys.chat.next_user_message.matches(event);
+      bool is_prev = keys.chat.prev_user_message.matches(event);
 
       if (is_next || is_prev) {
         std::scoped_lock lock(state->mtx);
@@ -1140,7 +1142,7 @@ struct QuickChatImpl {
     }
 
     // Alt+Enter sends message.
-    if (event == Event::Special({27, 13}) && !input_text.empty()) {
+    if (keys.chat.send_message.matches(event) && !input_text.empty()) {
       DoSend();
       return true;
     }
@@ -1159,7 +1161,7 @@ struct QuickChatImpl {
         return true;
       }
 
-      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event);
+      auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event, ctx.input_config);
 
       // Scroll viewport to follow the visual cursor.
       if (state->visual.has_value()) {
@@ -1193,6 +1195,8 @@ struct QuickChatImpl {
   }
 
   auto HandleInsertEvent(Event& event) -> bool {
+    const auto& keys = ctx.input_config;
+
     // Tab: insert a tab character into the input.
     if (event == Event::Tab) {
       input_text.insert(cursor_pos, "\t");
@@ -1205,7 +1209,7 @@ struct QuickChatImpl {
     }
 
     // Escape: close autocomplete overlay first, or enter Normal mode.
-    if (event == Event::Escape) {
+    if (keys.navigation.escape.matches(event)) {
       if (command_ac_state->is_open || file_ac_state->is_open) {
         command_ac_state->is_open = false;
         file_ac_state->is_open = false;
@@ -1224,7 +1228,7 @@ struct QuickChatImpl {
     }
 
     // Alt+Enter sends message.
-    if (event == Event::Special({27, 13}) && !input_text.empty()) {
+    if (keys.chat.send_message.matches(event) && !input_text.empty()) {
       DoSend();
       return true;
     }
@@ -1234,7 +1238,7 @@ struct QuickChatImpl {
       std::scoped_lock lock(command_ac_state->mutex);
       auto trigger = command_ac_state->trigger_position;
       std::string new_text;
-      if (autocomplete::HandleCommandKeydown(*command_ac_state, input_text, new_text, event)) {
+      if (autocomplete::HandleCommandKeydown(*command_ac_state, input_text, new_text, event, keys)) {
         if (!new_text.empty() && trigger.has_value()) {
           input_text = new_text;
           auto space_pos = new_text.find(' ', *trigger);
@@ -1676,7 +1680,7 @@ auto quick_chat(AppContext& ctx, Navigator& nav, ScreenInteractive& screen) -> C
           impl->input_text = before + insertion + " " + after;
           impl->cursor_pos = static_cast<int>(before.size() + insertion.size() + 1);
         }
-      });
+      }, ctx.input_config);
 
   // -- Background listeners ---------------------------------------------------
 

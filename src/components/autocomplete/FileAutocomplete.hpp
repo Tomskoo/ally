@@ -1,5 +1,7 @@
 #pragma once
 
+#include "src/configuration/InputConfig.hpp"
+
 #include <filesystem>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/screen_interactive.hpp>
@@ -27,7 +29,8 @@ void CheckAutocompleteTrigger(AutocompleteState& state, const std::string& text,
 /// items is the currently filtered/visible item list; on_select is called
 /// when the user confirms a selection (Enter/Tab).
 auto HandleAutocompleteKeydown(AutocompleteState& state, const std::vector<DirTreeNode*>& items, const ftxui::Event& event,
-                               const std::function<void()>& on_select) -> bool;
+                               const std::function<void()>& on_select,
+                               const ally::configuration::InputConfig& input_config) -> bool;
 
 /// Processes the selection of the currently highlighted item.
 /// - Directory: drills in, clears query, optionally triggers lazy load.
@@ -45,7 +48,8 @@ void SelectCurrentItem(AutocompleteState& state, const std::vector<DirTreeNode*>
 /// when a file is selected. The caller is responsible for splicing this into
 /// the text buffer.
 auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::filesystem::path project_root,
-                               ftxui::ScreenInteractive& screen, std::function<void(const std::string& insertion)> on_insert)
+                               ftxui::ScreenInteractive& screen, std::function<void(const std::string& insertion)> on_insert,
+                               const ally::configuration::InputConfig& input_config)
     -> ftxui::Component;
 
 }  // namespace ally::autocomplete

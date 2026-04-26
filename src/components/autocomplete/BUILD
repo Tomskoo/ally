@@ -27,6 +27,7 @@ cc_library(
         ":artifact_types",
         ":file_autocomplete",
         "//src/commands/storage",
+        "//src/configuration:input_config",
         "//src/models",
         "//src/services/watcher:watcher_events",
         "//src/services/watcher:watcher_queues",
@@ -43,6 +44,7 @@ cc_library(
     deps = [
         ":command_types",
         ":file_autocomplete",
+        "//src/configuration:input_config",
         "//src/services:command_service",
         "//src/services/watcher:watcher_events",
         "//src/services/watcher:watcher_queues",
@@ -59,6 +61,7 @@ cc_library(
     deps = [
         ":autocomplete_types",
         "//src/commands/storage",
+        "//src/configuration:input_config",
         "@ftxui//:component",
         "@ftxui//:dom",
     ],

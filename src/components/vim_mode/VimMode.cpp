@@ -78,15 +78,16 @@ void CopyToClipboard(const std::string& content) {
 
 auto HandleVisualKeyEvent(VisualModeState& vs,
                           InteractionMode& mode,
-                          const Event& event) -> std::optional<std::string> {
+                          const Event& event,
+                          const configuration::InputConfig& input_config) -> std::optional<std::string> {
   // Escape, 'n', or 'v' exits visual mode.
-  if (event == Event::Escape || event == Event::Character('n') || event == Event::Character('v')) {
+  if (input_config.vim.exit_visual.matches(event)) {
     mode = InteractionMode::Normal;
     return std::nullopt;
   }
 
   // 'y' yanks selection to clipboard.
-  if (event == Event::Character('y')) {
+  if (input_config.vim.yank.matches(event)) {
     auto selected = ExtractSelection(vs.lines, vs.anchor, vs.cursor);
     mode = InteractionMode::Normal;
     if (!selected.empty()) {
@@ -96,10 +97,10 @@ auto HandleVisualKeyEvent(VisualModeState& vs,
   }
 
   // hjkl and arrow key cursor movement.
-  bool is_left  = event == Event::Character('h') || event == Event::ArrowLeft;
-  bool is_down  = event == Event::Character('j') || event == Event::ArrowDown;
-  bool is_up    = event == Event::Character('k') || event == Event::ArrowUp;
-  bool is_right = event == Event::Character('l') || event == Event::ArrowRight;
+  bool is_left  = input_config.vim.left.matches(event);
+  bool is_down  = input_config.vim.down.matches(event);
+  bool is_up    = input_config.vim.up.matches(event);
+  bool is_right = input_config.vim.right.matches(event);
 
   if (is_left || is_down || is_up || is_right) {
     if (is_left) {
