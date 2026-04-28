@@ -1,6 +1,7 @@
 #include "BottomBar.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/event.hpp>
@@ -163,8 +164,23 @@ auto bottom_bar(AppContext& ctx, Navigator& nav, ftxui::ScreenInteractive& scree
       state->provider_expanded = true;
     }
 
-    // Bottom bar row: buttons rendered via their own Render()
+    // Transient status message (e.g., yank feedback), auto-expires after 1.5s.
+    Element status_el = text("");
+    {
+      std::scoped_lock lock(ctx.status_mutex);
+      if (ctx.status_message.has_value()) {
+        auto elapsed = std::chrono::steady_clock::now() - ctx.status_message->time;
+        if (elapsed > std::chrono::milliseconds(1500)) {
+          ctx.status_message = std::nullopt;
+        } else {
+          status_el = text(" " + ctx.status_message->text) | dim;
+        }
+      }
+    }
+
+    // Bottom bar row: status on left, buttons on right.
     auto bar = hbox({
+                   status_el,
                    filler(),
                    provider_btn->Render() | reflect(*provider_btn_box),
                    text(" "),

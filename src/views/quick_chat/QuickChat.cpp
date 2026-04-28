@@ -778,6 +778,7 @@ struct QuickChatImpl {
             ally::vim::CursorOverlay::Mode::Selection,
             state->visual->cursor.row, state->visual->cursor.col,
             sel_s.row, sel_s.col, sel_e.row, sel_e.col,
+            &state->visual->screen_captured_text,
         };
       } else if (state->chat.chat_cursor.has_value()) {
         chat_overlay_ = ally::vim::CursorOverlay{
@@ -1188,6 +1189,8 @@ struct QuickChatImpl {
 
     if (!text_to_copy.empty()) {
       CopyToClipboard(text_to_copy);
+      int line_count = 1 + static_cast<int>(std::count(text_to_copy.begin(), text_to_copy.end(), '\n'));
+      ctx.SetStatus("Copied " + std::to_string(line_count) + " lines into clipboard");
     }
 
     screen.PostEvent(Event::Custom);
@@ -1299,29 +1302,13 @@ struct QuickChatImpl {
   void EnterVisualMode() {
     std::scoped_lock lock(state->mtx);
 
-    std::vector<std::string> lines;
-    for (const auto& msg : state->chat.messages) {
-      for (size_t pidx = 0; pidx < msg.parts.size(); ++pidx) {
-        const auto& part = msg.parts[pidx];
-        auto part_type = part.contains("type") && part["type"].is_string() ? part["type"].get<std::string>() : std::string{};
-        if (part_type == "step-start" || part_type == "step-finish") { continue; }
-        std::string content;
-        if (part.contains("text") && part["text"].is_string()) {
-          content = part["text"].get<std::string>();
-        } else if (part.contains("content") && part["content"].is_string()) {
-          content = part["content"].get<std::string>();
-        }
-        if (!content.empty()) {
-          auto part_lines = SplitLines(content);
-          for (auto& line : part_lines) {
-            lines.push_back(std::move(line));
-          }
-        }
-      }
-      lines.emplace_back();
-    }
+    // For chat, use screen-row coordinate space. Build placeholder lines
+    // matching content_height so cursor movement bounds are correct.
+    // Actual text extraction uses screen capture (screen_captured_text).
+    int height = std::max(1, state->chat.content_height);
+    std::vector<std::string> lines(height);
 
-    if (lines.empty()) { return; }
+    if (state->chat.messages.empty()) { return; }
 
     VisualModeState vis;
     if (state->chat.chat_cursor.has_value()) {
@@ -1331,6 +1318,10 @@ struct QuickChatImpl {
       vis.anchor = {0, 0};
       vis.cursor = {0, 0};
     }
+    int max_row = std::max(0, static_cast<int>(lines.size()) - 1);
+    vis.anchor.row = std::clamp(vis.anchor.row, 0, max_row);
+    vis.cursor.row = std::clamp(vis.cursor.row, 0, max_row);
+    vis.viewport_width = std::max(0, chat_body_box_.x_max - chat_body_box_.x_min + 1);
     vis.lines = std::move(lines);
     vis.is_chat = true;
 

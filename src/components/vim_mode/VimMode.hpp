@@ -32,6 +32,14 @@ struct VisualModeState {
   TextCursor cursor;
   std::vector<std::string> lines;
   bool is_chat = false;  // true when visual mode is over chat content
+
+  // For chat mode: viewport width for column bounds (since lines are placeholders).
+  int viewport_width = 0;
+
+  // Text captured from the rendered screen during the last render pass.
+  // When available, yank uses this instead of ExtractSelection so the copied
+  // text matches exactly what was highlighted on screen.
+  std::string screen_captured_text;
 };
 
 // ---------------------------------------------------------------------------

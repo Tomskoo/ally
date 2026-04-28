@@ -88,7 +88,11 @@ auto HandleVisualKeyEvent(VisualModeState& vs,
 
   // 'y' yanks selection to clipboard.
   if (input_config.vim.yank.matches(event)) {
-    auto selected = ExtractSelection(vs.lines, vs.anchor, vs.cursor);
+    // Prefer screen-captured text (matches what's highlighted on screen).
+    // Fall back to raw extraction for non-chat visual mode (e.g., artifacts).
+    std::string selected = vs.screen_captured_text.empty()
+                               ? ExtractSelection(vs.lines, vs.anchor, vs.cursor)
+                               : vs.screen_captured_text;
     mode = InteractionMode::Normal;
     if (!selected.empty()) {
       return selected;
@@ -103,25 +107,26 @@ auto HandleVisualKeyEvent(VisualModeState& vs,
   bool is_right = input_config.vim.right.matches(event);
 
   if (is_left || is_down || is_up || is_right) {
+    auto max_col_for_row = [&](int row) -> int {
+      if (vs.is_chat && vs.viewport_width > 0) {
+        return std::max(0, vs.viewport_width - 1);
+      }
+      if (row >= 0 && row < static_cast<int>(vs.lines.size())) {
+        return std::max(0, static_cast<int>(vs.lines[row].size()) - 1);
+      }
+      return 0;
+    };
+
     if (is_left) {
       vs.cursor.col = std::max(0, vs.cursor.col - 1);
     } else if (is_right) {
-      int max_col = vs.cursor.row < static_cast<int>(vs.lines.size())
-                        ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1)
-                        : 0;
-      vs.cursor.col = std::min(vs.cursor.col + 1, max_col);
+      vs.cursor.col = std::min(vs.cursor.col + 1, max_col_for_row(vs.cursor.row));
     } else if (is_up) {
       vs.cursor.row = std::max(0, vs.cursor.row - 1);
-      int max_col = vs.cursor.row < static_cast<int>(vs.lines.size())
-                        ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1)
-                        : 0;
-      vs.cursor.col = std::min(vs.cursor.col, max_col);
+      vs.cursor.col = std::min(vs.cursor.col, max_col_for_row(vs.cursor.row));
     } else if (is_down) {
       vs.cursor.row = std::min(vs.cursor.row + 1, std::max(0, static_cast<int>(vs.lines.size()) - 1));
-      int max_col = vs.cursor.row < static_cast<int>(vs.lines.size())
-                        ? std::max(0, static_cast<int>(vs.lines[vs.cursor.row].size()) - 1)
-                        : 0;
-      vs.cursor.col = std::min(vs.cursor.col, max_col);
+      vs.cursor.col = std::min(vs.cursor.col, max_col_for_row(vs.cursor.row));
     }
     return std::nullopt;
   }

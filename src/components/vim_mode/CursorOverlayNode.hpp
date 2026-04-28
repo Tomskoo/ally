@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,6 +30,10 @@ struct CursorOverlay {
   int sel_start_col = 0;
   int sel_end_row = 0;
   int sel_end_col = 0;
+
+  // If non-null, the render pass captures the text under the selection
+  // from the actual screen pixels so that yank gets exactly what's highlighted.
+  std::string* captured_text = nullptr;
 };
 
 /// Wrap `child` so that after it renders, the overlay inverts pixel(s) for the
@@ -67,14 +72,68 @@ inline auto make_cursor_overlay(ftxui::Element child, const CursorOverlay* overl
         int sy = base_y + overlay_->cursor_row;
         InvertPixel(screen, sx, sy);
       } else {
-        // Selection: invert all cells in the range.
+        // Selection: invert all cells in the range and optionally capture text.
+        std::string captured;
+        bool capturing = (overlay_->captured_text != nullptr);
+
         for (int row = overlay_->sel_start_row; row <= overlay_->sel_end_row; ++row) {
           int col_begin = (row == overlay_->sel_start_row) ? overlay_->sel_start_col : 0;
           int col_end = (row == overlay_->sel_end_row) ? overlay_->sel_end_col : (box_.x_max - base_x);
+
+          if (capturing && row > overlay_->sel_start_row) {
+            captured += '\n';
+          }
+
+          std::string line;
           for (int col = col_begin; col <= col_end; ++col) {
-            InvertPixel(screen, base_x + col, base_y + row);
+            int sx = base_x + col;
+            int sy = base_y + row;
+            InvertPixel(screen, sx, sy);
+            if (capturing && sx >= 0 && sx < screen.dimx() && sy >= 0 && sy < screen.dimy()) {
+              const auto& ch = screen.PixelAt(sx, sy).character;
+              line += ch.empty() ? " " : ch;
+            }
+          }
+
+          if (capturing) {
+            // Trim trailing spaces from this line.
+            auto last = line.find_last_not_of(' ');
+            if (last != std::string::npos) {
+              line.resize(last + 1);
+            } else {
+              line.clear();
+            }
+            // Strip trailing "HH:MM:SS" timestamps from chat rendering.
+            if (line.size() >= 9) {
+              auto ts_start = line.size() - 8;
+              bool is_timestamp = (line[ts_start - 1] == ' ') &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 0])) &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 1])) &&
+                                  line[ts_start + 2] == ':' &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 3])) &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 4])) &&
+                                  line[ts_start + 5] == ':' &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 6])) &&
+                                  std::isdigit(static_cast<unsigned char>(line[ts_start + 7]));
+              if (is_timestamp) {
+                line.resize(ts_start);
+                // Re-trim trailing spaces left by the filler.
+                auto last2 = line.find_last_not_of(' ');
+                if (last2 != std::string::npos) {
+                  line.resize(last2 + 1);
+                } else {
+                  line.clear();
+                }
+              }
+            }
+            captured += line;
           }
         }
+
+        if (capturing) {
+          *overlay_->captured_text = std::move(captured);
+        }
+
         // Also show cursor position.
         int cx = base_x + overlay_->cursor_col;
         int cy = base_y + overlay_->cursor_row;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -48,6 +50,19 @@ struct AppContext {
   // Watcher broadcast channels
   watcher::WatcherBroadcast<watcher::ArtifactChangedEvent> artifact_broadcast;
   watcher::WatcherBroadcast<watcher::CommandsChangedEvent> commands_broadcast;
+
+  // Transient status message shown in the bottom bar (e.g., yank feedback).
+  struct StatusMessage {
+    std::string text;
+    std::chrono::steady_clock::time_point time;
+  };
+  std::optional<StatusMessage> status_message;
+  std::mutex status_mutex;
+
+  void SetStatus(std::string msg) {
+    std::scoped_lock lock(status_mutex);
+    status_message = StatusMessage{std::move(msg), std::chrono::steady_clock::now()};
+  }
 
   static constexpr size_t kMaxRecentTasks = 5;
 
