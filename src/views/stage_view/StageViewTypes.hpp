@@ -94,14 +94,19 @@ struct StageViewState {
   // View mode for the artifact viewer.
   ArtifactViewMode review_view_mode = ArtifactViewMode::Rendered;
 
+  // Artifact cursor for Normal mode navigation (raw-line-relative row/col).
+  std::optional<TextCursor> artifact_cursor;
+
   // Stage slugs that have artifacts on disk (used for [ ] navigation).
   std::vector<std::string> artifact_stages;
 
   // All stage slugs from the workflow definition (used for ordering).
   std::vector<std::string> all_workflow_stages;
 
-  // Scroll position for the artifact content in Review mode.
+  // Scroll position, viewport size, and content height for the artifact panel.
   int review_scroll_y = 0;
+  int review_viewport_height = 0;
+  int review_content_height = 0;
 
   // Chat panel state.
   ChatPanelState chat;

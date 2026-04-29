@@ -88,13 +88,16 @@ auto HandleVisualKeyEvent(VisualModeState& vs,
   }
 
   // Clean yank (default 'y'): for chat, caller resolves from messages;
-  // for non-chat (artifact), extract directly from lines.
+  // for non-chat (artifact), use screen-captured text when available
+  // (rendered mode), otherwise extract directly from raw lines.
   if (input_config.vim.yank.matches(event)) {
     mode = InteractionMode::Normal;
     if (vs.is_chat) {
       return {YankType::Clean, {}};
     }
-    std::string selected = ExtractSelection(vs.lines, vs.anchor, vs.cursor);
+    std::string selected = vs.screen_captured_text.empty()
+                               ? ExtractSelection(vs.lines, vs.anchor, vs.cursor)
+                               : vs.screen_captured_text;
     return selected.empty() ? VisualYankResult{} : VisualYankResult{YankType::Clean, std::move(selected)};
   }
 
@@ -115,7 +118,7 @@ auto HandleVisualKeyEvent(VisualModeState& vs,
 
   if (is_left || is_down || is_up || is_right) {
     auto max_col_for_row = [&](int row) -> int {
-      if (vs.is_chat && vs.viewport_width > 0) {
+      if (vs.viewport_width > 0) {
         return std::max(0, vs.viewport_width - 1);
       }
       if (row >= 0 && row < static_cast<int>(vs.lines.size())) {

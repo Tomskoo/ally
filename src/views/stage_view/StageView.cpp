@@ -320,13 +320,15 @@ struct StageViewImpl {
   Component model_button;
   Component model_menu;
 
-  // Cursor overlay (lives on the struct so the pointer survives through render).
+  // Cursor overlays (live on the struct so the pointer survives through render).
   std::optional<ally::vim::CursorOverlay> chat_overlay_;
+  std::optional<ally::vim::CursorOverlay> artifact_overlay_;
 
   // Message boundary tracking for J/K jumps (populated during render).
   std::vector<ftxui::Box> msg_reflect_boxes_;
   std::vector<bool> msg_is_user_;
   ftxui::Box chat_body_box_;
+  ftxui::Box artifact_body_box_;
 
   // Background threads
   std::atomic<bool> stop{false};
@@ -381,9 +383,11 @@ struct StageViewImpl {
     if (interaction == InteractionMode::Visual && visual_is_chat) {
       content = RenderChatWithOverlay(true);
     } else if (interaction == InteractionMode::Visual) {
-      content = RenderVisualMode();
+      content = RenderArtifactWithOverlay(true);
     } else if (interaction == InteractionMode::Normal && panel == PanelMode::Chat) {
       content = RenderChatWithOverlay(false);
+    } else if (interaction == InteractionMode::Normal && panel == PanelMode::Artifact) {
+      content = RenderArtifactWithOverlay(false);
     } else if (panel == PanelMode::Artifact) {
       content = RenderArtifactPanel();
     } else {
@@ -423,7 +427,7 @@ struct StageViewImpl {
       while (std::getline(stream, line)) {
         raw_lines.push_back(text(line.empty() ? " " : line));
       }
-      content_body = vbox(std::move(raw_lines)) | border | flex;
+      content_body = vbox(std::move(raw_lines)) | flex;
     } else if (!rendered.empty()) {
       content_body = vbox(std::move(rendered)) | flex;
     } else {
@@ -959,6 +963,80 @@ struct StageViewImpl {
     });
   }
 
+  /// Render artifact panel with cursor overlay (Normal or Visual mode).
+  /// Mirrors the RenderChatWithOverlay approach: render the formatted content,
+  /// overlay the cursor/selection on top, and use screen capture for yanking.
+  auto RenderArtifactWithOverlay(bool is_visual) -> Element {
+    bool loading;
+    ArtifactViewMode view_mode;
+    std::optional<std::string> raw_content;
+    std::vector<Element> rendered;
+    {
+      std::scoped_lock lock(state->mtx);
+      loading = state->review_loading;
+      view_mode = state->review_view_mode;
+      raw_content = state->review_content;
+      rendered = state->review_rendered;
+    }
+
+    Element content_body;
+    if (loading) {
+      content_body = text("  Loading...") | dim | flex;
+    } else if (view_mode == ArtifactViewMode::Raw && raw_content.has_value()) {
+      Elements raw_lines;
+      std::istringstream stream(*raw_content);
+      std::string line;
+      while (std::getline(stream, line)) {
+        raw_lines.push_back(text(line.empty() ? " " : line));
+      }
+      content_body = vbox(std::move(raw_lines)) | flex;
+    } else if (!rendered.empty()) {
+      content_body = vbox(std::move(rendered)) | flex;
+    } else {
+      content_body = text("  No artifact for this stage.") | dim | flex;
+    }
+
+    // Build the cursor overlay state (same pattern as RenderChatWithOverlay).
+    artifact_overlay_ = std::nullopt;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (is_visual && state->visual.has_value()) {
+        auto [sel_s, sel_e] = NormalizeSelection(state->visual->anchor, state->visual->cursor);
+        artifact_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Selection,
+            state->visual->cursor.row, state->visual->cursor.col,
+            sel_s.row, sel_s.col, sel_e.row, sel_e.col,
+            &state->visual->screen_captured_text,
+        };
+      } else if (state->artifact_cursor.has_value()) {
+        artifact_overlay_ = ally::vim::CursorOverlay{
+            ally::vim::CursorOverlay::Mode::Cursor,
+            state->artifact_cursor->row, state->artifact_cursor->col,
+            0, 0, 0, 0,
+        };
+      }
+    }
+
+    auto tracked_body = content_body | reflect_layout(artifact_body_box_);
+
+    const ally::vim::CursorOverlay* overlay_ptr = artifact_overlay_.has_value() ? &*artifact_overlay_ : nullptr;
+    auto overlaid = ally::vim::make_cursor_overlay(tracked_body, overlay_ptr);
+
+    return dbox({
+        vbox({
+            make_scrollable(overlaid | vscroll_indicator, &state->review_scroll_y,
+                            &state->review_viewport_height, &state->review_content_height) | flex,
+            separator(),
+            RenderInputBar(),
+        }),
+        vbox({
+            filler(),
+            RenderAutocompleteOverlay(),
+            emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
+        }),
+    });
+  }
+
   auto RenderVisualMode() -> Element {
     std::optional<VisualModeState> vs;
     {
@@ -1133,6 +1211,22 @@ struct StageViewImpl {
 
   // -- Scroll-follow-cursor ----------------------------------------------------
 
+  /// Adjusts review_scroll_y so the artifact cursor row is visible.
+  /// Caller must hold state->mtx.
+  void ScrollArtifactToCursor() {
+    if (!state->artifact_cursor.has_value()) { return; }
+    int cursor_row = state->artifact_cursor->row;
+    int scroll_y = state->review_scroll_y;
+    int viewport_h = state->review_viewport_height;
+    if (viewport_h <= 0) { return; }
+
+    if (cursor_row < scroll_y) {
+      state->review_scroll_y = cursor_row;
+    } else if (cursor_row >= scroll_y + viewport_h) {
+      state->review_scroll_y = cursor_row - viewport_h + 1;
+    }
+  }
+
   /// Adjusts chat_scroll_y so the cursor row is within the visible viewport.
   /// Caller must hold state->mtx.
   void ScrollToCursor() {
@@ -1267,14 +1361,6 @@ struct StageViewImpl {
       panel = state->panel;
     }
 
-    // Artifact panel: arrow keys scroll.
-    if (panel == PanelMode::Artifact && (keys.artifact.scroll_up.matches(event) || keys.artifact.scroll_down.matches(event))) {
-      int delta = keys.artifact.scroll_up.matches(event) ? -kScrollLines : kScrollLines;
-      state->review_scroll_y = std::max(0, state->review_scroll_y + delta);
-      screen.PostEvent(Event::Custom);
-      return true;
-    }
-
     if (panel == PanelMode::Artifact) {
       // Toggle rendered/raw.
       if (keys.artifact.toggle_render.matches(event)) {
@@ -1289,6 +1375,50 @@ struct StageViewImpl {
       if (keys.artifact.force_reload.matches(event)) {
         RefreshArtifactStages();
         LoadReviewArtifact(stage);
+        return true;
+      }
+
+      // hjkl and arrow keys move the cursor in Normal mode.
+      bool is_left  = keys.vim.left.matches(event);
+      bool is_down  = keys.vim.down.matches(event);
+      bool is_up    = keys.vim.up.matches(event);
+      bool is_right = keys.vim.right.matches(event);
+
+      if (is_left || is_down || is_up || is_right) {
+        std::scoped_lock lock(state->mtx);
+        if (!state->review_content.has_value()) { return true; }
+
+        bool is_rendered = state->review_view_mode == ArtifactViewMode::Rendered;
+
+        // Lazy-init cursor at top.
+        if (!state->artifact_cursor.has_value()) {
+          state->artifact_cursor = TextCursor{0, 0};
+        }
+        auto& cur = *state->artifact_cursor;
+
+        // In rendered mode, use content_height from the scrollable node
+        // (like chat). In raw mode, use the raw line structure.
+        int max_row;
+        if (is_rendered) {
+          max_row = std::max(0, state->review_content_height - 1);
+        } else {
+          auto lines = SplitLines(*state->review_content);
+          max_row = std::max(0, static_cast<int>(lines.size()) - 1);
+        }
+
+        if (is_left) {
+          cur.col = std::max(0, cur.col - 1);
+        } else if (is_right) {
+          cur.col = cur.col + 1;
+        } else if (is_up) {
+          cur.row = std::max(0, cur.row - 1);
+        } else if (is_down) {
+          cur.row = std::min(cur.row + 1, max_row);
+        }
+
+        ScrollArtifactToCursor();
+
+        screen.PostEvent(Event::Custom);
         return true;
       }
     }
@@ -1466,6 +1596,8 @@ struct StageViewImpl {
 
   auto HandleVisualEvent(Event& event) -> bool {
     std::string text_to_copy;
+    ally::vim::YankType yank_type = ally::vim::YankType::None;
+    bool was_artifact = false;
     {
       std::scoped_lock lock(state->mtx);
       if (!state->visual.has_value()) {
@@ -1478,20 +1610,26 @@ struct StageViewImpl {
       auto saved_anchor = state->visual->anchor;
       auto saved_cursor = state->visual->cursor;
       bool was_chat = state->visual->is_chat;
+      was_artifact = !was_chat && state->panel == PanelMode::Artifact;
 
       auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event, ctx.input_config);
 
-      // Scroll viewport to follow the visual cursor in the chat panel.
-      if (state->visual.has_value() && state->visual->is_chat) {
-        int cursor_row = state->visual->cursor.row;
-        int scroll_y = state->chat.chat_scroll_y;
-        int viewport_h = state->chat.viewport_height;
-        if (viewport_h > 0) {
-          if (cursor_row < scroll_y) {
-            state->chat.chat_scroll_y = cursor_row;
-          } else if (cursor_row >= scroll_y + viewport_h) {
-            state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+      // Scroll viewport to follow the visual cursor.
+      if (state->visual.has_value()) {
+        if (state->visual->is_chat) {
+          int cursor_row = state->visual->cursor.row;
+          int scroll_y = state->chat.chat_scroll_y;
+          int viewport_h = state->chat.viewport_height;
+          if (viewport_h > 0) {
+            if (cursor_row < scroll_y) {
+              state->chat.chat_scroll_y = cursor_row;
+            } else if (cursor_row >= scroll_y + viewport_h) {
+              state->chat.chat_scroll_y = cursor_row - viewport_h + 1;
+            }
           }
+        } else {
+          state->artifact_cursor = state->visual->cursor;
+          ScrollArtifactToCursor();
         }
       }
 
@@ -1500,6 +1638,7 @@ struct StageViewImpl {
         state->visual = std::nullopt;
       }
 
+      yank_type = result.type;
       if (result.type != ally::vim::YankType::None) {
         if (!result.text.empty()) {
           text_to_copy = std::move(result.text);
@@ -1510,6 +1649,16 @@ struct StageViewImpl {
               state->chat.message_screen_rows, state->chat.content_height,
               sel_s.row, sel_e.row);
         }
+      }
+    }
+
+    // Clean yank on artifacts: wrap in markdown code fencing.
+    if (!text_to_copy.empty() && yank_type == ally::vim::YankType::Clean && was_artifact) {
+      bool multiline = text_to_copy.find('\n') != std::string::npos;
+      if (multiline) {
+        text_to_copy = "````markdown\n" + text_to_copy + "\n````";
+      } else {
+        text_to_copy = "`" + text_to_copy + "`";
       }
     }
 
@@ -1650,7 +1799,14 @@ struct StageViewImpl {
     bool is_chat = false;
 
     if (state->panel == PanelMode::Artifact && state->review_content.has_value()) {
-      lines = SplitLines(*state->review_content);
+      if (state->review_view_mode == ArtifactViewMode::Rendered) {
+        // Rendered mode: use screen-row coordinate space (like chat).
+        // Build placeholder lines matching the rendered content height.
+        int height = std::max(1, state->review_content_height);
+        lines.resize(height);
+      } else {
+        lines = SplitLines(*state->review_content);
+      }
     } else if (state->panel == PanelMode::Chat) {
       // For chat, use screen-row coordinate space. Build placeholder lines
       // matching content_height so cursor movement bounds are correct.
@@ -1666,6 +1822,9 @@ struct StageViewImpl {
     if (is_chat && state->chat.chat_cursor.has_value()) {
       vs.anchor = *state->chat.chat_cursor;
       vs.cursor = *state->chat.chat_cursor;
+    } else if (!is_chat && state->artifact_cursor.has_value()) {
+      vs.anchor = *state->artifact_cursor;
+      vs.cursor = *state->artifact_cursor;
     } else {
       vs.anchor = {0, 0};
       vs.cursor = {0, 0};
@@ -1675,6 +1834,8 @@ struct StageViewImpl {
     vs.cursor.row = std::clamp(vs.cursor.row, 0, max_row);
     if (is_chat) {
       vs.viewport_width = std::max(0, chat_body_box_.x_max - chat_body_box_.x_min + 1);
+    } else if (state->review_view_mode == ArtifactViewMode::Rendered) {
+      vs.viewport_width = std::max(0, artifact_body_box_.x_max - artifact_body_box_.x_min + 1);
     }
     vs.lines = std::move(lines);
     vs.is_chat = is_chat;
@@ -1692,6 +1853,7 @@ struct StageViewImpl {
       state->review_loading = true;
       state->review_content = std::nullopt;
       state->review_rendered.clear();
+      state->artifact_cursor = std::nullopt;
 
       // If in visual mode, exit — content is changing.
       if (state->interaction == InteractionMode::Visual) {
@@ -1711,6 +1873,20 @@ struct StageViewImpl {
 
     std::thread([s, t, tid, thid, stage_slug, qdirs, &service, &scr] -> void {
       auto content = service.get_artifact(tid, thid, stage_slug);
+
+      // Strip YAML frontmatter (--- ... ---) so raw and rendered line numbers
+      // align. The renderer also strips it internally; doing it here keeps
+      // review_content consistent with the rendered output.
+      if (content.has_value() && content->size() >= 3 && content->substr(0, 3) == "---") {
+        auto close = content->find("\n---", 3);
+        if (close != std::string::npos) {
+          auto after = close + 4;
+          if (after < content->size() && (*content)[after] == '\n') {
+            ++after;
+          }
+          *content = content->substr(after);
+        }
+      }
 
       std::vector<Element> rendered;
       if (content.has_value() && !content->empty()) {
