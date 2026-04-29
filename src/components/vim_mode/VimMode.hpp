@@ -9,6 +9,7 @@
 #include <ftxui/component/event.hpp>
 
 #include "src/configuration/InputConfig.hpp"
+#include "src/opencode/Types.hpp"
 
 namespace ally::vim {
 
@@ -42,6 +43,18 @@ struct VisualModeState {
   std::string screen_captured_text;
 };
 
+enum class YankType : std::uint8_t {
+  None,
+  Clean,  // extract original markdown source
+  Dirty,  // screen-captured pixels
+};
+
+struct VisualYankResult {
+  YankType type = YankType::None;
+  std::string text;  // pre-filled for dirty yank and non-chat clean yank;
+                     // empty for chat clean yank (caller resolves from messages)
+};
+
 // ---------------------------------------------------------------------------
 // Selection helpers
 // ---------------------------------------------------------------------------
@@ -64,11 +77,29 @@ void CopyToClipboard(const std::string& content);
 // ---------------------------------------------------------------------------
 
 /// Handle a key event in Visual mode.
-/// Returns the yanked text if 'y' was pressed, std::nullopt otherwise.
-/// On exit (Escape/n) or yank, sets mode to Normal and clears visual state.
+/// Returns a YankResult indicating what action was taken.
+/// On exit (Escape/n) or yank, sets mode to Normal.
 auto HandleVisualKeyEvent(VisualModeState& vs,
                           InteractionMode& mode,
                           const ftxui::Event& event,
-                          const configuration::InputConfig& input_config) -> std::optional<std::string>;
+                          const configuration::InputConfig& input_config) -> VisualYankResult;
+
+/// Extract original markdown source text for messages whose rendered rows
+/// overlap the selection [sel_start_row, sel_end_row].
+auto ExtractCleanYankText(
+    const std::vector<opencode::MessageWithParts>& messages,
+    size_t visible_count,
+    const std::vector<int>& msg_screen_rows,
+    int content_height,
+    int sel_start_row,
+    int sel_end_row) -> std::string;
+
+/// Compute message row ranges that overlap the selection, for visual feedback.
+/// Returns (start_row, end_row) pairs in content-relative coordinates.
+auto ComputeMessageRanges(
+    const std::vector<int>& msg_screen_rows,
+    int content_height,
+    int sel_start_row,
+    int sel_end_row) -> std::vector<std::pair<int, int>>;
 
 }  // namespace ally::vim

@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/node.hpp>
@@ -34,6 +35,11 @@ struct CursorOverlay {
   // If non-null, the render pass captures the text under the selection
   // from the actual screen pixels so that yank gets exactly what's highlighted.
   std::string* captured_text = nullptr;
+
+  // Message-level highlight ranges (content-relative row spans).
+  // When non-empty, renders a vertical bar on the left for these ranges
+  // instead of pixel-level selection inversion (used for clean yank).
+  std::vector<std::pair<int, int>> message_ranges;
 };
 
 /// Wrap `child` so that after it renders, the overlay inverts pixel(s) for the
@@ -71,8 +77,28 @@ inline auto make_cursor_overlay(ftxui::Element child, const CursorOverlay* overl
         int sx = base_x + overlay_->cursor_col;
         int sy = base_y + overlay_->cursor_row;
         InvertPixel(screen, sx, sy);
+      } else if (!overlay_->message_ranges.empty()) {
+        // Message-level selection: draw a vertical bar on the left edge
+        // for each message row range that overlaps the selection.
+        for (const auto& [range_start, range_end] : overlay_->message_ranges) {
+          for (int row = range_start; row <= range_end; ++row) {
+            int sy = base_y + row;
+            int sx = base_x;
+            if (sx < screen.stencil.x_min || sx > screen.stencil.x_max ||
+                sy < screen.stencil.y_min || sy > screen.stencil.y_max) {
+              continue;
+            }
+            auto& pixel = screen.PixelAt(sx, sy);
+            pixel.character = "\u2503";  // ┃ heavy vertical bar
+            pixel.foreground_color = ftxui::Color::Yellow;
+          }
+        }
+        // Show cursor position.
+        int cx = base_x + overlay_->cursor_col;
+        int cy = base_y + overlay_->cursor_row;
+        InvertPixel(screen, cx, cy);
       } else {
-        // Selection: invert all cells in the range and optionally capture text.
+        // Pixel-level selection: invert all cells in the range and optionally capture text.
         std::string captured;
         bool capturing = (overlay_->captured_text != nullptr);
 

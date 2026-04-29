@@ -10,6 +10,7 @@ cc_library(
     visibility = ["//src:__subpackages__"],
     deps = [
         "//src/configuration:input_config",
+        "//src/opencode:types",
         "@ftxui//:component",
         "@ftxui//:dom",
         "@ftxui//:screen",

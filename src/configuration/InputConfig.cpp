@@ -31,6 +31,7 @@ auto DefaultInputConfig() -> InputConfig {
   c.vim.enter_visual  = {{Event::Character('v')}};
   c.vim.exit_visual   = {{Event::Escape, Event::Character('n'), Event::Character('v')}};
   c.vim.yank          = {{Event::Character('y')}};
+  c.vim.dirty_yank    = {{}};
 
   // -- Artifact ---------------------------------------------------------------
   c.artifact.scroll_up     = {{Event::ArrowUp}};

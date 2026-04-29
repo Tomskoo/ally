@@ -774,11 +774,15 @@ struct QuickChatImpl {
       std::scoped_lock lock(state->mtx);
       if (is_visual && state->visual.has_value()) {
         auto [sel_s, sel_e] = ally::vim::NormalizeSelection(state->visual->anchor, state->visual->cursor);
+        auto msg_ranges = ally::vim::ComputeMessageRanges(
+            state->chat.message_screen_rows, state->chat.content_height,
+            sel_s.row, sel_e.row);
         chat_overlay_ = ally::vim::CursorOverlay{
             ally::vim::CursorOverlay::Mode::Selection,
             state->visual->cursor.row, state->visual->cursor.col,
             sel_s.row, sel_s.col, sel_e.row, sel_e.col,
             &state->visual->screen_captured_text,
+            std::move(msg_ranges),
         };
       } else if (state->chat.chat_cursor.has_value()) {
         chat_overlay_ = ally::vim::CursorOverlay{
@@ -1162,6 +1166,11 @@ struct QuickChatImpl {
         return true;
       }
 
+      // Save selection bounds before HandleVisualKeyEvent may trigger mode change.
+      auto saved_anchor = state->visual->anchor;
+      auto saved_cursor = state->visual->cursor;
+      bool was_chat = true;  // QuickChat is always chat mode.
+
       auto result = ally::vim::HandleVisualKeyEvent(*state->visual, state->interaction, event, ctx.input_config);
 
       // Scroll viewport to follow the visual cursor.
@@ -1182,8 +1191,16 @@ struct QuickChatImpl {
         state->visual = std::nullopt;
       }
 
-      if (result.has_value() && !result->empty()) {
-        text_to_copy = std::move(*result);
+      if (result.type != ally::vim::YankType::None) {
+        if (!result.text.empty()) {
+          text_to_copy = std::move(result.text);
+        } else if (result.type == ally::vim::YankType::Clean && was_chat) {
+          auto [sel_s, sel_e] = ally::vim::NormalizeSelection(saved_anchor, saved_cursor);
+          text_to_copy = ally::vim::ExtractCleanYankText(
+              state->chat.messages, state->chat.visible_count,
+              state->chat.message_screen_rows, state->chat.content_height,
+              sel_s.row, sel_e.row);
+        }
       }
     }
 

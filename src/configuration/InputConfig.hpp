@@ -43,6 +43,7 @@ struct InputConfig {
     EventBinding enter_visual;
     EventBinding exit_visual;
     EventBinding yank;
+    EventBinding dirty_yank;
   };
 
   struct Artifact {
