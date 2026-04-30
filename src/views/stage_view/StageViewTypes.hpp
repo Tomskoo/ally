@@ -73,6 +73,10 @@ struct ChatPanelState {
   int content_height = 0;                     // total rendered content height
   int viewport_height = 0;                    // visible viewport height (from scrollable node)
 
+  // Session navigation within a stage.
+  size_t session_index = 0;   // position in the stage's session list (for display)
+  size_t session_count = 0;   // total sessions for this stage
+
   // Question overlay state.
   std::optional<opencode::QuestionRequest> active_question;
   int question_idx = 0;                       // current question in multi-question flow

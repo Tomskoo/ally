@@ -14,6 +14,9 @@ auto DefaultInputConfig() -> InputConfig {
   c.chat.prev_user_message  = {{Event::AltK, Event::Special("\x1b[1;3A")}};
   c.chat.send_message       = {{Event::Special({27, 13})}};
   c.chat.toggle_panel       = {{Event::Tab, Event::TabReverse}};
+  c.chat.new_session        = {{Event::Character('N')}};
+  c.chat.prev_session       = {{Event::Character('{')}};
+  c.chat.next_session       = {{Event::Character('}')}};
 
   // -- Navigation -------------------------------------------------------------
   c.navigation.cycle_right       = {{Event::Character(']')}};

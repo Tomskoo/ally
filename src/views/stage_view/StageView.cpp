@@ -1147,9 +1147,13 @@ struct StageViewImpl {
 
   auto RenderInputBar() -> Element {
     InteractionMode interaction;
+    size_t sess_idx = 0;
+    size_t sess_count = 0;
     {
       std::scoped_lock lock(state->mtx);
       interaction = state->interaction;
+      sess_idx = state->chat.session_index;
+      sess_count = state->chat.session_count;
     }
 
     auto mode_label = [&]() -> Element {
@@ -1162,6 +1166,12 @@ struct StageViewImpl {
           return text(" INSERT ") | bold | color(Color::Green);
       }
       return text("");
+    }();
+
+    auto session_label = [&]() -> Element {
+      if (sess_count <= 1) { return emptyElement(); }
+      auto label = std::to_string(sess_idx + 1) + "/" + std::to_string(sess_count);
+      return text(" " + label + " ") | dim;
     }();
 
     auto prompt_label = (interaction == InteractionMode::Insert) ? (text(" $ ") | bold | color(Color::White)) : (text(" $ ") | bold | dim);
@@ -1186,6 +1196,7 @@ struct StageViewImpl {
 
     return hbox({
         vbox({mode_label, filler()}),
+        vbox({session_label, filler()}),
         sep(),
         input_with_prompt | flex,
         sep(),
@@ -1613,6 +1624,22 @@ struct StageViewImpl {
         }
       }
       nav.replace(ally::StageViewState{task_id, thread_id, target});
+      return true;
+    }
+
+    // Session navigation with { and }.
+    if (keys.chat.next_session.matches(event)) {
+      std::thread([this]() { SwitchSession(1); }).detach();
+      return true;
+    }
+    if (keys.chat.prev_session.matches(event)) {
+      std::thread([this]() { SwitchSession(-1); }).detach();
+      return true;
+    }
+
+    // New session with N.
+    if (keys.chat.new_session.matches(event)) {
+      std::thread([this]() { CreateNewSession(); }).detach();
       return true;
     }
 
@@ -2532,17 +2559,20 @@ struct StageViewImpl {
   // -- Chat: session resolution -----------------------------------------------
 
   void ResolveSession() {
-    // 1. Try to restore a persisted session ID.
-    auto stored_id = commands::storage::GetStageSessionId(ctx.project_root, task_id, thread_id, stage);
+    // 1. Get all persisted session IDs for this stage (active = last).
+    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
 
     std::string resolved_sid;
+    size_t active_idx = 0;
 
-    if (stored_id.has_value()) {
-      auto result = opencode::GetSession(ctx.opencode_state, ctx.opencode_mutex, *stored_id);
+    if (!all_ids.empty()) {
+      // Validate the active (last) session.
+      active_idx = all_ids.size() - 1;
+      auto result = opencode::GetSession(ctx.opencode_state, ctx.opencode_mutex, all_ids[active_idx]);
       if (opencode::is_ok(result)) {
-        resolved_sid = *stored_id;
+        resolved_sid = all_ids[active_idx];
       }
-      // If error, discard stored ID and create a new one.
+      // If invalid, fall through to create a new one.
     }
 
     // 2. Create a new session if none was resolved.
@@ -2552,7 +2582,9 @@ struct StageViewImpl {
       auto result = opencode::CreateSession(ctx.opencode_state, ctx.opencode_mutex, req);
       if (opencode::is_ok(result)) {
         resolved_sid = opencode::get_value(result).id;
-        commands::storage::SaveStageSessionId(ctx.project_root, task_id, thread_id, stage, resolved_sid);
+        commands::storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, resolved_sid);
+        all_ids.push_back(resolved_sid);
+        active_idx = all_ids.size() - 1;
       } else {
         std::scoped_lock lock(state->mtx);
         state->chat.error_msg = "Failed to create session: " + opencode::get_error(result).message;
@@ -2561,10 +2593,12 @@ struct StageViewImpl {
       }
     }
 
-    // 3. Store resolved session ID.
+    // 3. Store resolved session ID and multi-session metadata.
     {
       std::scoped_lock lock(state->mtx);
       state->chat.session_id = resolved_sid;
+      state->chat.session_index = active_idx;
+      state->chat.session_count = all_ids.size();
     }
 
     // 4. Load message history.
@@ -2574,27 +2608,112 @@ struct StageViewImpl {
     {
       std::scoped_lock lock(state->mtx);
       if (state->chat.messages.empty() && !workflow_stages.empty()) {
-        for (const auto& ws : workflow_stages) {
-          if (ws.id == stage && !ws.starting_prompt.empty()) {
-            std::string prompt = ws.starting_prompt;
-            // Resolve $<slug> references to @path.
-            for (const auto& other_stage : workflow_stages) {
-              std::string token = "$" + other_stage.id;
-              std::string replacement =
-                  "@.ally/tasks/" + task_id + "/threads/" + thread_id + "/stages/" + other_stage.id + "/artifact.md";
-              size_t pos = 0;
-              while ((pos = prompt.find(token, pos)) != std::string::npos) {
-                prompt.replace(pos, token.size(), replacement);
-                pos += replacement.size();
+        if (state->chat.session_count > 1) {
+          // Continuation session: reference the existing artifact.
+          std::string artifact_ref =
+              "@.ally/tasks/" + task_id + "/threads/" + thread_id + "/stages/" + stage + "/artifact.md";
+          input_text = "Continue iterating on " + artifact_ref;
+          cursor_pos = static_cast<int>(input_text.size());
+        } else {
+          // First session: use the workflow's starting prompt.
+          for (const auto& ws : workflow_stages) {
+            if (ws.id == stage && !ws.starting_prompt.empty()) {
+              std::string prompt = ws.starting_prompt;
+              // Resolve $<slug> references to @path.
+              for (const auto& other_stage : workflow_stages) {
+                std::string token = "$" + other_stage.id;
+                std::string replacement =
+                    "@.ally/tasks/" + task_id + "/threads/" + thread_id + "/stages/" + other_stage.id + "/artifact.md";
+                size_t pos = 0;
+                while ((pos = prompt.find(token, pos)) != std::string::npos) {
+                  prompt.replace(pos, token.size(), replacement);
+                  pos += replacement.size();
+                }
               }
+              input_text = prompt;
+              cursor_pos = static_cast<int>(prompt.size());
+              break;
             }
-            input_text = prompt;
-            cursor_pos = static_cast<int>(prompt.size());
-            break;
           }
         }
       }
     }
+    screen.PostEvent(Event::Custom);
+  }
+
+  void CreateNewSession() {
+    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
+
+    opencode::CreateSessionRequest req;
+    req.title = task_id + " - " + stage + " #" + std::to_string(all_ids.size() + 1);
+    auto result = opencode::CreateSession(ctx.opencode_state, ctx.opencode_mutex, req);
+    if (!opencode::is_ok(result)) {
+      std::scoped_lock lock(state->mtx);
+      state->chat.error_msg = "Failed to create session: " + opencode::get_error(result).message;
+      screen.PostEvent(Event::Custom);
+      return;
+    }
+
+    auto new_sid = opencode::get_value(result).id;
+    commands::storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, new_sid);
+    all_ids.push_back(new_sid);
+
+    {
+      std::scoped_lock lock(state->mtx);
+      state->chat.session_id = new_sid;
+      state->chat.session_index = all_ids.size() - 1;
+      state->chat.session_count = all_ids.size();
+      state->chat.messages.clear();
+      state->chat.rendered_parts_cache.clear();
+      state->chat.part_timestamps.clear();
+      state->chat.expanded_parts.clear();
+      state->chat.subagent_msg_sessions.clear();
+      state->chat.subagent_streaming_text.clear();
+      state->chat.chat_scroll_y = INT_MAX;
+      state->chat.chat_follow = true;
+      state->chat.error_msg = std::nullopt;
+
+      // Pre-fill with artifact reference.
+      std::string artifact_ref =
+          "@.ally/tasks/" + task_id + "/threads/" + thread_id + "/stages/" + stage + "/artifact.md";
+      input_text = "Continue iterating on " + artifact_ref;
+      cursor_pos = static_cast<int>(input_text.size());
+    }
+    screen.PostEvent(Event::Custom);
+  }
+
+  void SwitchSession(int direction) {
+    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
+    if (all_ids.size() <= 1) { return; }
+
+    size_t current;
+    {
+      std::scoped_lock lock(state->mtx);
+      current = state->chat.session_index;
+    }
+
+    auto target = static_cast<int>(current) + direction;
+    if (target < 0 || target >= static_cast<int>(all_ids.size())) { return; }
+
+    auto new_idx = static_cast<size_t>(target);
+    auto& target_sid = all_ids[new_idx];
+
+    commands::storage::SetActiveStageSession(ctx.project_root, task_id, thread_id, stage, target_sid);
+
+    {
+      std::scoped_lock lock(state->mtx);
+      state->chat.session_id = target_sid;
+      state->chat.session_index = new_idx;
+      state->chat.messages.clear();
+      state->chat.rendered_parts_cache.clear();
+      state->chat.part_timestamps.clear();
+      state->chat.expanded_parts.clear();
+      state->chat.chat_scroll_y = INT_MAX;
+      state->chat.chat_follow = true;
+      state->chat.error_msg = std::nullopt;
+    }
+
+    RefreshMessages(state, ctx.opencode_state, ctx.opencode_mutex, screen);
     screen.PostEvent(Event::Custom);
   }
 };

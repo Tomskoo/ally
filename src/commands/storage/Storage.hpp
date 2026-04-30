@@ -68,6 +68,18 @@ auto GetStageSessionId(const std::filesystem::path& project_root, const std::str
 auto SaveStageSessionId(const std::filesystem::path& project_root, const std::string& task_id, const std::string& thread_id,
                         const std::string& stage, const std::string& session_id) -> bool;
 
+/// Return all persisted session IDs for a stage (ordered, active session last).
+auto GetStageSessionIds(const std::filesystem::path& project_root, const std::string& task_id, const std::string& thread_id,
+                        const std::string& stage) -> std::vector<std::string>;
+
+/// Append a new session ID to the stage's session list (becomes the active session).
+auto AppendStageSessionId(const std::filesystem::path& project_root, const std::string& task_id, const std::string& thread_id,
+                          const std::string& stage, const std::string& session_id) -> bool;
+
+/// Move a session ID to the end of the stage's session list (making it active).
+auto SetActiveStageSession(const std::filesystem::path& project_root, const std::string& task_id, const std::string& thread_id,
+                           const std::string& stage, const std::string& session_id) -> bool;
+
 /// Look up the persisted model ID for a provider.
 auto GetModelForProvider(const std::filesystem::path& project_root, const std::string& provider_id) -> std::optional<std::string>;
 

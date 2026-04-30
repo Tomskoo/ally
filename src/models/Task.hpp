@@ -19,7 +19,7 @@ struct Thread {
   std::string last_activity;
   ThreadStatus status = ThreadStatus::Running;
   bool archived = false;
-  std::unordered_map<std::string, std::string> stage_sessions;  // stage → session_id
+  std::unordered_map<std::string, std::vector<std::string>> stage_sessions;  // stage → [session_ids]
 };
 
 struct Task {

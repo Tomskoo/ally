@@ -85,7 +85,15 @@ static auto read_threads(const fs::path& task_dir) -> std::vector<models::Thread
       }
       if (node["stage_sessions"] && node["stage_sessions"].IsMap()) {
         for (auto it = node["stage_sessions"].begin(); it != node["stage_sessions"].end(); ++it) {
-          thread.stage_sessions[it->first.as<std::string>()] = it->second.as<std::string>();
+          auto key = it->first.as<std::string>();
+          if (it->second.IsSequence()) {
+            for (const auto& item : it->second) {
+              thread.stage_sessions[key].push_back(item.as<std::string>());
+            }
+          } else {
+            // Old format: single string → wrap in vector.
+            thread.stage_sessions[key].push_back(it->second.as<std::string>());
+          }
         }
       }
       threads.push_back(std::move(thread));
@@ -231,8 +239,12 @@ auto write_thread(const fs::path& project_root, const std::string& task_id, cons
     out << YAML::Key << "archived" << YAML::Value << thread.archived;
     if (!thread.stage_sessions.empty()) {
       out << YAML::Key << "stage_sessions" << YAML::Value << YAML::BeginMap;
-      for (const auto& [stage, sid] : thread.stage_sessions) {
-        out << YAML::Key << stage << YAML::Value << sid;
+      for (const auto& [stage, sids] : thread.stage_sessions) {
+        out << YAML::Key << stage << YAML::Value << YAML::BeginSeq;
+        for (const auto& sid : sids) {
+          out << sid;
+        }
+        out << YAML::EndSeq;
       }
       out << YAML::EndMap;
     }
@@ -492,7 +504,12 @@ auto GetStageSessionId(const fs::path& project_root, const std::string& task_id,
   try {
     auto node = YAML::LoadFile(thread_yaml.string());
     if (node["stage_sessions"] && node["stage_sessions"].IsMap() && node["stage_sessions"][stage]) {
-      return node["stage_sessions"][stage].as<std::string>();
+      const auto& val = node["stage_sessions"][stage];
+      if (val.IsSequence()) {
+        if (val.size() == 0) { return std::nullopt; }
+        return val[val.size() - 1].as<std::string>();  // active = last
+      }
+      return val.as<std::string>();  // old scalar format
     }
   } catch (const std::exception& /*unused*/) {
     // YAML parse failure — treat as missing session
@@ -502,13 +519,106 @@ auto GetStageSessionId(const fs::path& project_root, const std::string& task_id,
 
 auto SaveStageSessionId(const fs::path& project_root, const std::string& task_id, const std::string& thread_id,
                         const std::string& stage, const std::string& session_id) -> bool {
+  return AppendStageSessionId(project_root, task_id, thread_id, stage, session_id);
+}
+
+auto GetStageSessionIds(const fs::path& project_root, const std::string& task_id, const std::string& thread_id,
+                        const std::string& stage) -> std::vector<std::string> {
+  auto thread_yaml = project_root / ".ally" / "tasks" / task_id / "threads" / thread_id / "thread.yaml";
+  if (!fs::exists(thread_yaml)) {
+    return {};
+  }
+  try {
+    auto node = YAML::LoadFile(thread_yaml.string());
+    if (node["stage_sessions"] && node["stage_sessions"].IsMap() && node["stage_sessions"][stage]) {
+      const auto& val = node["stage_sessions"][stage];
+      std::vector<std::string> result;
+      if (val.IsSequence()) {
+        for (const auto& item : val) {
+          result.push_back(item.as<std::string>());
+        }
+      } else {
+        // Old scalar format.
+        result.push_back(val.as<std::string>());
+      }
+      return result;
+    }
+  } catch (...) {
+  }
+  return {};
+}
+
+auto AppendStageSessionId(const fs::path& project_root, const std::string& task_id, const std::string& thread_id,
+                          const std::string& stage, const std::string& session_id) -> bool {
   auto thread_yaml = project_root / ".ally" / "tasks" / task_id / "threads" / thread_id / "thread.yaml";
   if (!fs::exists(thread_yaml)) {
     return false;
   }
   try {
     auto node = YAML::LoadFile(thread_yaml.string());
-    node["stage_sessions"][stage] = session_id;
+
+    // Migrate old scalar to sequence if needed, then append.
+    YAML::Node sessions;
+    if (node["stage_sessions"] && node["stage_sessions"][stage]) {
+      const auto& existing = node["stage_sessions"][stage];
+      if (existing.IsSequence()) {
+        sessions = existing;
+      } else {
+        // Old scalar → seed sequence with the existing value.
+        sessions.push_back(existing.as<std::string>());
+      }
+    }
+    sessions.push_back(session_id);
+    node["stage_sessions"][stage] = sessions;
+
+    YAML::Emitter out;
+    out << node;
+
+    std::ofstream file(thread_yaml);
+    if (!file.is_open()) {
+      return false;
+    }
+    file << out.c_str() << "\n";
+    return file.good();
+  } catch (...) {
+    return false;
+  }
+}
+
+auto SetActiveStageSession(const fs::path& project_root, const std::string& task_id, const std::string& thread_id,
+                           const std::string& stage, const std::string& session_id) -> bool {
+  auto thread_yaml = project_root / ".ally" / "tasks" / task_id / "threads" / thread_id / "thread.yaml";
+  if (!fs::exists(thread_yaml)) {
+    return false;
+  }
+  try {
+    auto node = YAML::LoadFile(thread_yaml.string());
+    if (!node["stage_sessions"] || !node["stage_sessions"][stage]) {
+      return false;
+    }
+
+    const auto& existing = node["stage_sessions"][stage];
+    std::vector<std::string> ids;
+    if (existing.IsSequence()) {
+      for (const auto& item : existing) {
+        ids.push_back(item.as<std::string>());
+      }
+    } else {
+      ids.push_back(existing.as<std::string>());
+    }
+
+    // Move session_id to the end (making it active).
+    auto it = std::find(ids.begin(), ids.end(), session_id);
+    if (it == ids.end()) {
+      return false;
+    }
+    std::rotate(it, std::next(it), ids.end());
+
+    YAML::Node sessions;
+    for (const auto& sid : ids) {
+      sessions.push_back(sid);
+    }
+    node["stage_sessions"][stage] = sessions;
 
     YAML::Emitter out;
     out << node;

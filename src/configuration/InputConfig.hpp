@@ -24,6 +24,9 @@ struct InputConfig {
     EventBinding prev_user_message;
     EventBinding send_message;
     EventBinding toggle_panel;
+    EventBinding new_session;
+    EventBinding prev_session;
+    EventBinding next_session;
   };
 
   struct Navigation {
