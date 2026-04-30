@@ -356,6 +356,21 @@ auto OpenCodeClient::ListAgents() -> Result<std::vector<AgentInfo>> {
   return HandleResponse<std::vector<AgentInfo>>(client_->Get("/agent"));
 }
 
+// --- Questions ---
+
+auto OpenCodeClient::ListQuestions() -> Result<std::vector<QuestionRequest>> {
+  return HandleResponse<std::vector<QuestionRequest>>(client_->Get("/question"));
+}
+
+auto OpenCodeClient::ReplyQuestion(const std::string& request_id, const QuestionReplyRequest& req) -> Result<std::monostate> {
+  nlohmann::json body = req;
+  return HandleEmptyResponse(client_->Post("/question/" + request_id + "/reply", body.dump(), "application/json"));
+}
+
+auto OpenCodeClient::RejectQuestion(const std::string& request_id) -> Result<std::monostate> {
+  return HandleEmptyResponse(client_->Post("/question/" + request_id + "/reject", "{}", "application/json"));
+}
+
 // --- TUI ---
 
 auto OpenCodeClient::TuiToast(const ToastRequest& req) -> Result<std::monostate> {

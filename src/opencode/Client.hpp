@@ -81,6 +81,11 @@ class OpenCodeClient {
   // Agents
   [[nodiscard]] auto ListAgents() -> Result<std::vector<AgentInfo>>;
 
+  // Questions
+  [[nodiscard]] auto ListQuestions() -> Result<std::vector<QuestionRequest>>;
+  auto ReplyQuestion(const std::string& request_id, const QuestionReplyRequest& req) -> Result<std::monostate>;
+  auto RejectQuestion(const std::string& request_id) -> Result<std::monostate>;
+
   // TUI
   auto TuiToast(const ToastRequest& req) -> Result<std::monostate>;
   [[nodiscard]] auto TuiExecuteCommand(const ExecuteCommandRequest& req) -> Result<nlohmann::json>;

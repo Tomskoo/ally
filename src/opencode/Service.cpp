@@ -240,6 +240,25 @@ auto ListAgents(OpenCodeState& state, std::shared_mutex& mtx) -> Result<std::vec
   return WithClient(state, mtx, [](OpenCodeClient& client) -> Result<std::vector<AgentInfo>> { return client.ListAgents(); });
 }
 
+// --- Questions ---
+
+auto ListQuestions(OpenCodeState& state, std::shared_mutex& mtx) -> Result<std::vector<QuestionRequest>> {
+  return WithClient(state, mtx,
+                    [](OpenCodeClient& client) -> Result<std::vector<QuestionRequest>> { return client.ListQuestions(); });
+}
+
+auto ReplyQuestion(OpenCodeState& state, std::shared_mutex& mtx, const std::string& request_id,
+                   const QuestionReplyRequest& req) -> Result<std::monostate> {
+  return WithClient(state, mtx, [&request_id, &req](OpenCodeClient& client) -> Result<std::monostate> {
+    return client.ReplyQuestion(request_id, req);
+  });
+}
+
+auto RejectQuestion(OpenCodeState& state, std::shared_mutex& mtx, const std::string& request_id) -> Result<std::monostate> {
+  return WithClient(state, mtx,
+                    [&request_id](OpenCodeClient& client) -> Result<std::monostate> { return client.RejectQuestion(request_id); });
+}
+
 // --- TUI ---
 
 auto TuiToast(OpenCodeState& state, std::shared_mutex& mtx, const ToastRequest& req) -> Result<std::monostate> {

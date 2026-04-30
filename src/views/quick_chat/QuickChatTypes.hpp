@@ -59,6 +59,14 @@ struct QuickChatPanelState {
   std::vector<int> user_message_screen_rows;  // rows for user ($ input) messages only
   int content_height = 0;
   int viewport_height = 0;
+
+  // Question overlay state.
+  std::optional<opencode::QuestionRequest> active_question;
+  int question_idx = 0;                       // current question in multi-question flow
+  int question_cursor = 0;                    // cursor position in options list
+  std::unordered_set<int> question_selected;  // selected option indices (multi-select)
+  std::string question_custom_text;           // custom text input
+  bool question_custom_active = false;        // typing custom answer
 };
 
 struct QuickChatViewState {

@@ -89,6 +89,12 @@ auto McpCreate(OpenCodeState& state, std::shared_mutex& mtx, const McpCreateRequ
 // Agents
 auto ListAgents(OpenCodeState& state, std::shared_mutex& mtx) -> Result<std::vector<AgentInfo>>;
 
+// Questions
+auto ListQuestions(OpenCodeState& state, std::shared_mutex& mtx) -> Result<std::vector<QuestionRequest>>;
+auto ReplyQuestion(OpenCodeState& state, std::shared_mutex& mtx, const std::string& request_id,
+                   const QuestionReplyRequest& req) -> Result<std::monostate>;
+auto RejectQuestion(OpenCodeState& state, std::shared_mutex& mtx, const std::string& request_id) -> Result<std::monostate>;
+
 // TUI
 auto TuiToast(OpenCodeState& state, std::shared_mutex& mtx, const ToastRequest& req) -> Result<std::monostate>;
 auto TuiExecuteCommand(OpenCodeState& state, std::shared_mutex& mtx, const ExecuteCommandRequest& req) -> Result<nlohmann::json>;

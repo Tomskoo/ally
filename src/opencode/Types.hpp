@@ -328,4 +328,66 @@ inline void from_json(const nlohmann::json& json, ProviderAuthMethod& val) { val
 // ProviderAuthMap: provider_id -> list of auth methods
 using ProviderAuthMap = std::unordered_map<std::string, std::vector<ProviderAuthMethod>>;
 
+// --- Questions ---
+
+struct QuestionOption {
+  std::string label;
+  std::string description;
+};
+
+inline void from_json(const nlohmann::json& json, QuestionOption& val) {
+  json.at("label").get_to(val.label);
+  if (json.contains("description") && json["description"].is_string()) {
+    val.description = json["description"].get<std::string>();
+  }
+}
+
+struct QuestionItem {
+  std::string question;
+  std::string header;
+  std::vector<QuestionOption> options;
+  bool multiple = false;
+  bool custom = true;
+};
+
+inline void from_json(const nlohmann::json& json, QuestionItem& val) {
+  json.at("question").get_to(val.question);
+  if (json.contains("header") && json["header"].is_string()) {
+    val.header = json["header"].get<std::string>();
+  }
+  if (json.contains("options") && json["options"].is_array()) {
+    val.options = json["options"].get<std::vector<QuestionOption>>();
+  }
+  if (json.contains("multiple") && json["multiple"].is_boolean()) {
+    val.multiple = json["multiple"].get<bool>();
+  }
+  if (json.contains("custom") && json["custom"].is_boolean()) {
+    val.custom = json["custom"].get<bool>();
+  }
+}
+
+struct QuestionRequest {
+  std::string id;
+  std::string session_id;
+  std::vector<QuestionItem> questions;
+  nlohmann::json extra;  // full JSON for forward compatibility
+};
+
+inline void from_json(const nlohmann::json& json, QuestionRequest& val) {
+  json.at("id").get_to(val.id);
+  if (json.contains("sessionID") && json["sessionID"].is_string()) {
+    val.session_id = json["sessionID"].get<std::string>();
+  }
+  if (json.contains("questions") && json["questions"].is_array()) {
+    val.questions = json["questions"].get<std::vector<QuestionItem>>();
+  }
+  val.extra = json;
+}
+
+struct QuestionReplyRequest {
+  std::vector<std::vector<std::string>> answers;
+};
+
+inline void to_json(nlohmann::json& json, const QuestionReplyRequest& val) { json = {{"answers", val.answers}}; }
+
 }  // namespace ally::opencode

@@ -492,11 +492,48 @@ struct QuickChatImpl {
     return el | reflect(state->chat.collapsible_boxes[base_key]);
   }
 
+  auto RenderQuestionToolPart(const nlohmann::json& part) -> Element {
+    auto tool_state = part.value("state", nlohmann::json::object());
+    auto status = tool_state.value("status", "");
+    auto output = tool_state.value("output", "");
+    auto input = tool_state.value("input", nlohmann::json::object());
+
+    Elements els;
+
+    // Extract question text from input.
+    std::string question_text;
+    if (input.contains("questions") && input["questions"].is_array() && !input["questions"].empty()) {
+      auto& first_q = input["questions"][0];
+      question_text = first_q.value("question", "");
+    } else if (input.contains("question") && input["question"].is_string()) {
+      question_text = input["question"].get<std::string>();
+    }
+
+    els.push_back(text("# question") | bold);
+    if (!question_text.empty()) {
+      els.push_back(text(question_text));
+    }
+
+    if (status == "completed") {
+      if (!output.empty()) {
+        els.push_back(text("  Answer: " + output) | color(Color::Green));
+      }
+    } else {
+      els.push_back(text("  Awaiting response...") | color(Color::Yellow));
+    }
+
+    return vbox(std::move(els)) | border | color(Color::Yellow) | xflex;
+  }
+
   auto RenderToolPart(const std::string& msg_id, size_t part_idx, const nlohmann::json& part) -> Element {
     auto tool_name = part.value("tool", "tool");
 
     if (tool_name == "task") {
       return RenderSubAgentPart(msg_id, part_idx, part);
+    }
+
+    if (tool_name == "question") {
+      return RenderQuestionToolPart(part);
     }
 
     auto tool_state = part.value("state", nlohmann::json::object());
@@ -716,6 +753,7 @@ struct QuickChatImpl {
             RenderAutocompleteOverlay(),
             emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
         }),
+        RenderQuestionOverlay(),
     });
   }
 
@@ -807,6 +845,7 @@ struct QuickChatImpl {
             RenderAutocompleteOverlay(),
             emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
         }),
+        RenderQuestionOverlay(),
     });
   }
 
@@ -905,6 +944,74 @@ struct QuickChatImpl {
     return overlay | clear_under;
   }
 
+  auto RenderQuestionOverlay() -> Element {
+    std::scoped_lock lock(state->mtx);
+    if (!state->chat.active_question) { return emptyElement(); }
+
+    auto& q = *state->chat.active_question;
+    if (state->chat.question_idx >= static_cast<int>(q.questions.size())) { return emptyElement(); }
+    auto& item = q.questions[state->chat.question_idx];
+
+    Elements els;
+
+    // Header.
+    if (!item.header.empty()) {
+      els.push_back(text(" " + item.header + " ") | bold | color(Color::Yellow));
+    }
+    els.push_back(text(item.question));
+    if (item.multiple) {
+      els.push_back(text("  (select multiple, Space to toggle)") | dim);
+    }
+    els.push_back(separator());
+
+    // Options.
+    for (int i = 0; i < static_cast<int>(item.options.size()); ++i) {
+      bool selected = state->chat.question_selected.count(i) > 0;
+      bool focused = (i == state->chat.question_cursor && !state->chat.question_custom_active);
+      std::string indicator = item.multiple ? (selected ? "[x] " : "[ ] ") : (selected ? "(o) " : "( ) ");
+
+      Elements line_els;
+      line_els.push_back(text(indicator + item.options[i].label));
+      if (!item.options[i].description.empty()) {
+        line_els.push_back(text(" - " + item.options[i].description) | dim);
+      }
+      auto line = hbox(std::move(line_els));
+      if (focused) { line = line | inverted; }
+      els.push_back(line);
+    }
+
+    // Custom text input option.
+    if (item.custom) {
+      bool focused = state->chat.question_custom_active;
+      auto custom_line = hbox({
+          text(focused ? "> " : "  "),
+          text(state->chat.question_custom_text + (focused ? "_" : "")),
+      });
+      if (focused) { custom_line = custom_line | inverted; }
+      els.push_back(custom_line);
+    }
+
+    // Footer hints.
+    els.push_back(separator());
+    Elements hints;
+    hints.push_back(text(" Enter:submit ") | dim);
+    if (item.multiple) { hints.push_back(text(" Space:toggle ") | dim); }
+    if (item.custom) { hints.push_back(text(" Tab:custom ") | dim); }
+    hints.push_back(text(" Esc:dismiss ") | dim);
+    if (q.questions.size() > 1) {
+      hints.push_back(text(" (" + std::to_string(state->chat.question_idx + 1) + "/" + std::to_string(q.questions.size()) + ") ") | dim);
+    }
+    els.push_back(hbox(std::move(hints)));
+
+    auto box = vbox(std::move(els)) | border | color(Color::Yellow) | xflex;
+
+    return vbox({
+        filler(),
+        box,
+        emptyElement() | size(HEIGHT, EQUAL, InputBarHeight()),
+    });
+  }
+
   // -- Scroll-follow-cursor ----------------------------------------------------
 
   /// Adjusts chat_scroll_y so the cursor row is within the visible viewport.
@@ -943,6 +1050,170 @@ struct QuickChatImpl {
     }
   }
 
+  // -- Question event handling --------------------------------------------------
+
+  void SubmitQuestionAnswers() {
+    // Collect answers for the current question and advance or submit.
+    std::scoped_lock lock(state->mtx);
+    if (!state->chat.active_question) { return; }
+
+    auto& q = *state->chat.active_question;
+    auto& item = q.questions[state->chat.question_idx];
+
+    // Build answer for this question.
+    std::vector<std::string> answer;
+    if (state->chat.question_custom_active && !state->chat.question_custom_text.empty()) {
+      answer.push_back(state->chat.question_custom_text);
+    } else if (item.multiple) {
+      for (int idx : state->chat.question_selected) {
+        if (idx >= 0 && idx < static_cast<int>(item.options.size())) {
+          answer.push_back(item.options[idx].label);
+        }
+      }
+    } else {
+      // Single-select: use the cursor position.
+      if (state->chat.question_cursor >= 0 && state->chat.question_cursor < static_cast<int>(item.options.size())) {
+        answer.push_back(item.options[state->chat.question_cursor].label);
+      }
+    }
+
+    // Store this answer (build up across multi-question flow).
+    // We use extra JSON to accumulate answers across questions.
+    if (!q.extra.contains("_answers") || !q.extra["_answers"].is_array()) {
+      q.extra["_answers"] = nlohmann::json::array();
+    }
+    q.extra["_answers"].push_back(answer);
+
+    // Advance to next question or submit.
+    if (state->chat.question_idx + 1 < static_cast<int>(q.questions.size())) {
+      state->chat.question_idx++;
+      state->chat.question_cursor = 0;
+      state->chat.question_selected.clear();
+      state->chat.question_custom_text.clear();
+      state->chat.question_custom_active = false;
+    } else {
+      // Submit all answers.
+      auto request_id = q.id;
+      auto all_answers = q.extra["_answers"].get<std::vector<std::vector<std::string>>>();
+      state->chat.active_question = std::nullopt;
+
+      auto sptr = state;
+      auto& ocs = ctx.opencode_state;
+      auto& ocm = ctx.opencode_mutex;
+      auto& scr = screen;
+      std::thread([sptr, &ocs, &ocm, &scr, request_id, all_answers]() -> void {
+        opencode::QuestionReplyRequest req;
+        req.answers = all_answers;
+        opencode::ReplyQuestion(ocs, ocm, request_id, req);
+        scr.PostEvent(Event::Custom);
+      }).detach();
+    }
+  }
+
+  void RejectActiveQuestion() {
+    std::string request_id;
+    {
+      std::scoped_lock lock(state->mtx);
+      if (!state->chat.active_question) { return; }
+      request_id = state->chat.active_question->id;
+      state->chat.active_question = std::nullopt;
+    }
+
+    auto& ocs = ctx.opencode_state;
+    auto& ocm = ctx.opencode_mutex;
+    auto& scr = screen;
+    std::thread([&ocs, &ocm, &scr, request_id]() -> void {
+      opencode::RejectQuestion(ocs, ocm, request_id);
+      scr.PostEvent(Event::Custom);
+    }).detach();
+  }
+
+  auto HandleQuestionEvent(Event& event) -> bool {
+    // Arrow Up / k
+    if (event == Event::ArrowUp || event == Event::Character("k")) {
+      std::scoped_lock lock(state->mtx);
+      if (state->chat.question_custom_active) {
+        // Leave custom input, go to last option.
+        state->chat.question_custom_active = false;
+        auto& item = state->chat.active_question->questions[state->chat.question_idx];
+        state->chat.question_cursor = static_cast<int>(item.options.size()) - 1;
+      } else if (state->chat.question_cursor > 0) {
+        state->chat.question_cursor--;
+      }
+      return true;
+    }
+
+    // Arrow Down / j
+    if (event == Event::ArrowDown || event == Event::Character("j")) {
+      std::scoped_lock lock(state->mtx);
+      auto& item = state->chat.active_question->questions[state->chat.question_idx];
+      int max_idx = static_cast<int>(item.options.size()) - 1;
+      if (!state->chat.question_custom_active && state->chat.question_cursor < max_idx) {
+        state->chat.question_cursor++;
+      } else if (!state->chat.question_custom_active && item.custom && state->chat.question_cursor >= max_idx) {
+        state->chat.question_custom_active = true;
+      }
+      return true;
+    }
+
+    // Space: toggle selection in multi-select mode
+    if (event == Event::Character(" ")) {
+      std::scoped_lock lock(state->mtx);
+      auto& item = state->chat.active_question->questions[state->chat.question_idx];
+      if (item.multiple && !state->chat.question_custom_active) {
+        int idx = state->chat.question_cursor;
+        if (state->chat.question_selected.count(idx) > 0) {
+          state->chat.question_selected.erase(idx);
+        } else {
+          state->chat.question_selected.insert(idx);
+        }
+      }
+      return true;
+    }
+
+    // Tab: toggle custom text input
+    if (event == Event::Tab) {
+      std::scoped_lock lock(state->mtx);
+      auto& item = state->chat.active_question->questions[state->chat.question_idx];
+      if (item.custom) {
+        state->chat.question_custom_active = !state->chat.question_custom_active;
+      }
+      return true;
+    }
+
+    // Enter: submit
+    if (event == Event::Return) {
+      SubmitQuestionAnswers();
+      return true;
+    }
+
+    // Escape: reject/dismiss
+    if (event == Event::Escape) {
+      RejectActiveQuestion();
+      return true;
+    }
+
+    // Backspace in custom input
+    if (event == Event::Backspace) {
+      std::scoped_lock lock(state->mtx);
+      if (state->chat.question_custom_active && !state->chat.question_custom_text.empty()) {
+        state->chat.question_custom_text.pop_back();
+      }
+      return true;
+    }
+
+    // Character input in custom mode
+    if (event.is_character()) {
+      std::scoped_lock lock(state->mtx);
+      if (state->chat.question_custom_active) {
+        state->chat.question_custom_text += event.character();
+        return true;
+      }
+    }
+
+    return true;  // Consume all events while question overlay is active.
+  }
+
   // -- Event handling ---------------------------------------------------------
 
   auto HandleEvent(Event event) -> bool {
@@ -954,6 +1225,16 @@ struct QuickChatImpl {
       }
       UpdateMessageBoundaries();
       return false;
+    }
+
+    // Question overlay takes priority over all other input modes.
+    {
+      bool has_question = false;
+      {
+        std::scoped_lock lock(state->mtx);
+        has_question = state->chat.active_question.has_value();
+      }
+      if (has_question) { return HandleQuestionEvent(event); }
     }
 
     InteractionMode interaction;
@@ -1443,6 +1724,33 @@ struct QuickChatImpl {
         }
         scr.PostEvent(Event::Custom);
       }).detach();
+    } else if (type == "question.asked") {
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      try {
+        auto question = props.get<opencode::QuestionRequest>();
+        std::scoped_lock lock(state->mtx);
+        if (state->chat.session_id && question.session_id == *state->chat.session_id) {
+          state->chat.active_question = std::move(question);
+          state->chat.question_idx = 0;
+          state->chat.question_cursor = 0;
+          state->chat.question_selected.clear();
+          state->chat.question_custom_text.clear();
+          state->chat.question_custom_active = false;
+        }
+      } catch (const nlohmann::json::exception&) {
+        // Ignore malformed question events.
+      }
+      screen.PostEvent(Event::Custom);
+    } else if (type == "question.replied" || type == "question.rejected") {
+      auto props = evt.data.value("properties", nlohmann::json::object());
+      auto request_id = props.value("requestID", "");
+      if (!request_id.empty()) {
+        std::scoped_lock lock(state->mtx);
+        if (state->chat.active_question && state->chat.active_question->id == request_id) {
+          state->chat.active_question = std::nullopt;
+        }
+      }
+      screen.PostEvent(Event::Custom);
     }
   }
 
