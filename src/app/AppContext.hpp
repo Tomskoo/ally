@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -50,6 +51,11 @@ struct AppContext {
   // Watcher broadcast channels
   watcher::WatcherBroadcast<watcher::ArtifactChangedEvent> artifact_broadcast;
   watcher::WatcherBroadcast<watcher::CommandsChangedEvent> commands_broadcast;
+
+  // Returns true when the current view allows command-bar activation (`:` key).
+  // Views in Insert mode return false; views without vim modes return true.
+  // Set by StageView/QuickChat on activation; default allows activation.
+  std::function<bool()> allow_command_bar = []() -> bool { return true; };
 
   // Transient status message shown in the bottom bar (e.g., yank feedback).
   struct StatusMessage {

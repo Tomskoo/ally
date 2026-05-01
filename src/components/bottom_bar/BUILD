@@ -8,6 +8,9 @@ cc_library(
     deps = [
         "//src/app:app_context",
         "//src/auth",
+        "//src/components/command_bar",
+        "//src/components/command_bar:command_bar_state",
+        "//src/components/command_bar:command_registry",
         "//src/components/health_monitor",
         "@ftxui//:component",
         "@ftxui//:dom",

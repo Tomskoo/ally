@@ -6,7 +6,7 @@
 
 namespace ally {
 
-enum class FocusTarget : std::uint8_t { Navbar, MainView, ProviderBar };
+enum class FocusTarget : std::uint8_t { Navbar, MainView, ProviderBar, CommandBar };
 
 struct FocusState {
   FocusTarget target = FocusTarget::MainView;

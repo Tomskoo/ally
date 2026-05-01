@@ -17,6 +17,9 @@
 #include "Navigator.hpp"
 #include "src/commands/storage/Storage.hpp"
 #include "src/components/bottom_bar/BottomBar.hpp"
+#include "src/components/command_bar/CommandBar.hpp"
+#include "src/components/command_bar/CommandBarState.hpp"
+#include "src/components/command_bar/CommandRegistry.hpp"
 #include "src/components/nav_bar/NavBar.hpp"
 #include "src/components/splash/Splash.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
@@ -241,7 +244,19 @@ auto handle_enter_on_navbar(const Event& event, ally::Navigator& nav, const AppC
 }
 
 auto handle_app_event(const Event& event, ally::Navigator& nav, const AppComponents& components,
-                      const ally::configuration::InputConfig& input_config) -> bool {
+                      const ally::configuration::InputConfig& input_config, ally::AppContext& ctx,
+                      ally::components::CommandBarState& cmd_state, ally::components::CommandRegistry& cmd_registry) -> bool {
+  // 0. If the command bar is active, route ALL events to it.
+  if (cmd_state.is_active) {
+    ally::components::HandleCommandBarEvent(cmd_state, cmd_registry, event);
+    if (!cmd_state.is_active) {
+      // Command bar was deactivated — restore focus to main view.
+      nav.set_focus(ally::FocusTarget::MainView);
+      components.active_proxy->TakeFocus();
+    }
+    return true;
+  }
+
   // 1. Mouse wheel
   if (auto handled = handle_mouse_wheel(event, nav, components.active_proxy); handled.has_value()) {
     return *handled;
@@ -259,6 +274,13 @@ auto handle_app_event(const Event& event, ally::Navigator& nav, const AppCompone
   // 2d. Enter when navbar is focused — activate element
   if (auto handled = handle_enter_on_navbar(event, nav, components); handled.has_value()) {
     return *handled;
+  }
+  // 2e. ':' — activate command bar (only when view allows it)
+  if (event == Event::Character(':') && ctx.allow_command_bar()) {
+    cmd_state.Activate();
+    nav.set_focus(ally::FocusTarget::CommandBar);
+    components.bottom_bar->TakeFocus();
+    return true;
   }
   // 3. Remaining: active → bottom bar → navbar
   if (components.active_proxy->OnEvent(event)) {
@@ -350,6 +372,8 @@ auto main(int argc, char* argv[]) -> int {
     ally::Navigator nav([&rebuild_component]() -> void { rebuild_component(); });
 
     rebuild_component = [&]() -> void {
+      // Reset command bar permission — StageView/QuickChat override this in their factories.
+      ctx.allow_command_bar = []() -> bool { return true; };
       std::visit(
           overloaded{
               [&](const ally::BoardState&) -> void { *active_component = ally::views::task_board(ctx, nav) | border; },
@@ -379,10 +403,23 @@ auto main(int argc, char* argv[]) -> int {
       active_proxy->Add(*active_component);
     };
 
+    // -- Command bar state and registry ------------------------------------------
+    auto cmd_state = std::make_shared<ally::components::CommandBarState>();
+    auto cmd_registry = std::make_shared<ally::components::CommandRegistry>();
+
+    cmd_registry->Register({"q", "Quit the application", [&screen](const std::string&) { screen.Exit(); }});
+    cmd_registry->Register({"quit", "Quit the application", [&screen](const std::string&) { screen.Exit(); }});
+    cmd_registry->Register({"board", "Go to the task board", [&nav](const std::string&) { nav.go(ally::BoardState{}); }});
+    cmd_registry->Register({"back", "Navigate back", [&nav](const std::string&) { nav.back(); }});
+    cmd_registry->Register(
+        {"workflows", "Go to the workflow list", [&nav](const std::string&) { nav.go(ally::WorkflowsState{}); }});
+    cmd_registry->Register({"help", "Show available commands",
+                            [&ctx](const std::string&) { ctx.SetStatus("Commands: :q :board :back :workflows :help"); }});
+
     rebuild_component();
 
     auto nav_bar_component = ally::components::nav_bar(ctx, nav);
-    auto bottom_bar_component = ally::components::bottom_bar(ctx, nav, screen);
+    auto bottom_bar_component = ally::components::bottom_bar(ctx, nav, screen, cmd_state, cmd_registry);
 
     // Focus tree — Container::Vertical manages which child is focused.
     // TakeFocus() on a child makes the others report Focused() == false,
@@ -426,7 +463,7 @@ auto main(int argc, char* argv[]) -> int {
         .nav_bar = nav_bar_component,
         .bottom_bar = bottom_bar_component,
     };
-    auto main_component = CatchEvent(renderer, [&](const Event& event) -> bool { return handle_app_event(event, nav, components, ctx.input_config); });
+    auto main_component = CatchEvent(renderer, [&](const Event& event) -> bool { return handle_app_event(event, nav, components, ctx.input_config, ctx, *cmd_state, *cmd_registry); });
 
     if (show_splash) {
       auto splash_done = std::make_shared<bool>(false);

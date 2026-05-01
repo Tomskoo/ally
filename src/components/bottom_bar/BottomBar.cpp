@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "src/auth/Auth.hpp"
+#include "src/components/command_bar/CommandBar.hpp"
 #include "src/components/health_monitor/HealthMonitor.hpp"
 
 using namespace ftxui;
@@ -50,7 +51,9 @@ struct BottomBarState {
 
 }  // namespace
 
-auto bottom_bar(AppContext& ctx, Navigator& nav, ftxui::ScreenInteractive& screen) -> Component {
+auto bottom_bar(AppContext& ctx, Navigator& nav, ftxui::ScreenInteractive& screen,
+                const std::shared_ptr<CommandBarState>& cmd_state,
+                const std::shared_ptr<CommandRegistry>& cmd_registry) -> Component {
   auto state = std::make_shared<BottomBarState>();
   auto monitor = std::make_shared<HealthMonitor>(ctx, screen);
   auto health_state = monitor->GetState();
@@ -178,15 +181,32 @@ auto bottom_bar(AppContext& ctx, Navigator& nav, ftxui::ScreenInteractive& scree
       }
     }
 
-    // Bottom bar row: status on left, buttons on right.
+    // Bottom bar row: command bar or status on left, buttons on right.
+    Element left_el;
+    if (cmd_state->is_active) {
+      left_el = RenderCommandBar(*cmd_state) | flex;
+    } else {
+      left_el = status_el;
+    }
+
     auto bar = hbox({
-                   status_el,
+                   left_el,
                    filler(),
                    provider_btn->Render() | reflect(*provider_btn_box),
                    text(" "),
                    health_btn->Render() | reflect(*health_btn_box),
                }) |
                size(HEIGHT, EQUAL, 1);
+
+    // Command bar autocomplete panel
+    if (cmd_state->is_active && cmd_state->autocomplete_open) {
+      auto panel = RenderCommandAutocomplete(*cmd_state, *cmd_registry) | clear_under;
+      return vbox({
+          filler(),
+          hbox({panel, filler()}),
+          bar,
+      });
+    }
 
     // Provider panel
     if (state->provider_expanded) {

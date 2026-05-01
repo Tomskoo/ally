@@ -2724,6 +2724,12 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
                 const std::string& thread_id, const std::string& stage) -> Component {
   auto impl = std::make_shared<StageViewImpl>(ctx, nav, screen, task_id, thread_id, stage);
 
+  // Let the global command bar know when ':' should activate.
+  ctx.allow_command_bar = [state = impl->state]() -> bool {
+    std::scoped_lock lock(state->mtx);
+    return state->interaction == InteractionMode::Normal;
+  };
+
   impl->ResolveWorkflowStages();
 
   // -- Input component with cursor tracking and autocomplete triggers ---------

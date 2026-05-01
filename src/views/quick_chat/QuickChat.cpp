@@ -1936,6 +1936,12 @@ struct QuickChatImpl {
 auto quick_chat(AppContext& ctx, Navigator& nav, ScreenInteractive& screen) -> Component {
   auto impl = std::make_shared<QuickChatImpl>(ctx, nav, screen);
 
+  // Let the global command bar know when ':' should activate.
+  ctx.allow_command_bar = [state = impl->state]() -> bool {
+    std::scoped_lock lock(state->mtx);
+    return state->interaction == InteractionMode::Normal;
+  };
+
   // -- Input component with cursor tracking and autocomplete triggers ---------
 
   InputOption input_opts;
