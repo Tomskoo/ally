@@ -7,7 +7,7 @@ cc_library(
     visibility = ["//src:__subpackages__"],
     deps = [
         "//src/app:app_context",
-        "//src/commands/storage",
+        "//src/storage",
         "//src/models",
         "//src/style/form:form_style",
         "@ftxui//:component",

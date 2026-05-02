@@ -15,7 +15,7 @@
 #include "src/app/AppContext.hpp"
 #include "src/app/NavState.hpp"
 #include "src/app/Navigator.hpp"
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/components/autocomplete/FileAutocomplete.hpp"
 #include "src/components/autocomplete/CommandAutocomplete.hpp"
 #include "src/components/autocomplete/CommandTypes.hpp"
@@ -917,7 +917,7 @@ struct QuickChatImpl {
         auto model_id = state->chat.filtered_models[current_idx].id;
         auto root = ctx.project_root;
         std::thread([root, provider_id, model_id]() -> void {
-          commands::storage::SetModelForProvider(root, provider_id, model_id);
+          storage::SetModelForProvider(root, provider_id, model_id);
         }).detach();
       }
     }
@@ -1872,7 +1872,7 @@ struct QuickChatImpl {
       }
     }
 
-    auto persisted = commands::storage::GetModelForProvider(ctx.project_root, provider_id);
+    auto persisted = storage::GetModelForProvider(ctx.project_root, provider_id);
     state->chat.selected_model_idx = 0;
     if (persisted.has_value()) {
       for (int idx = 0; idx < static_cast<int>(state->chat.filtered_models.size()); ++idx) {
@@ -1964,7 +1964,7 @@ auto quick_chat(AppContext& ctx, Navigator& nav, ScreenInteractive& screen) -> C
         auto root = impl->ctx.project_root;
         auto& scr = impl->screen;
         std::thread([state_copy, root, &scr]() -> void {
-          commands::storage::list_directory_tree(root, 6, [state_copy, &scr](std::vector<autocomplete::DirTreeNode> nodes) -> void {
+          storage::list_directory_tree(root, 6, [state_copy, &scr](std::vector<autocomplete::DirTreeNode> nodes) -> void {
             std::scoped_lock lock(state_copy->mutex);
             state_copy->tree_cache = std::move(nodes);
             scr.PostEvent(Event::Custom);

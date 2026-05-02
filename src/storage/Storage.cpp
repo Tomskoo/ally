@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-namespace ally::commands::storage {
+namespace ally::storage {
 
 auto find_project_root() -> fs::path {
   auto current = fs::current_path();
@@ -647,4 +647,4 @@ auto SetModelForProvider(const fs::path& project_root, const std::string& provid
   configuration::SaveModelForProvider(project_root, provider_id, model_id);
 }
 
-}  // namespace ally::commands::storage
+}  // namespace ally::storage

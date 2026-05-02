@@ -7,7 +7,6 @@ cc_library(
     visibility = ["//src:__subpackages__"],
     deps = [
         "//src/app:app_context",
-        "//src/commands/task",
         "//src/models",
         "//src/style/colour:stage_colours",
         "//src/utils:time_format",

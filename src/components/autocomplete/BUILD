@@ -26,7 +26,7 @@ cc_library(
     deps = [
         ":artifact_types",
         ":file_autocomplete",
-        "//src/commands/storage",
+        "//src/storage",
         "//src/configuration:input_config",
         "//src/models",
         "//src/services/watcher:watcher_events",
@@ -60,7 +60,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":autocomplete_types",
-        "//src/commands/storage",
+        "//src/storage",
         "//src/configuration:input_config",
         "@ftxui//:component",
         "@ftxui//:dom",

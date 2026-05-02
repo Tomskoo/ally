@@ -8,7 +8,7 @@
 #include <sstream>
 #include <thread>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 
 namespace ally::autocomplete {
 
@@ -167,7 +167,7 @@ auto GetChildrenAtPath(std::vector<DirTreeNode>& tree, const std::vector<std::st
 }
 
 void InsertEntriesAtPath(std::vector<DirTreeNode>& tree, const std::vector<std::string>& path_segments,
-                         const std::vector<ally::commands::storage::DirEntry>& entries) {
+                         const std::vector<ally::storage::DirEntry>& entries) {
   std::vector<DirTreeNode>* current = &tree;
   for (const auto& segment : path_segments) {
     bool found = false;
@@ -430,8 +430,8 @@ auto FileAutocompleteComponent(std::shared_ptr<AutocompleteState> state, std::fi
             const auto& state_copy = state;
             const auto& root_copy = root;
             std::thread([state_copy, root_copy, path, &screen]() -> void {
-              ally::commands::storage::list_directory_entries(
-                  *root_copy, path, [state_copy, &screen, path](const std::vector<ally::commands::storage::DirEntry>& entries) -> void {
+              ally::storage::list_directory_entries(
+                  *root_copy, path, [state_copy, &screen, path](const std::vector<ally::storage::DirEntry>& entries) -> void {
                     std::scoped_lock lock(state_copy->mutex);
                     if (state_copy->tree_cache.has_value()) {
                       auto segments = SplitPath(path);

@@ -17,6 +17,7 @@ class Navigator {
 
   void go(NavState new_state) {
     history_.push_back(current_);
+    forward_.clear();
     current_ = std::move(new_state);
     scroll_y = 0;
     reset_focus();
@@ -34,8 +35,21 @@ class Navigator {
     if (history_.empty()) {
       return;
     }
+    forward_.push_back(current_);
     current_ = history_.back();
     history_.pop_back();
+    scroll_y = 0;
+    reset_focus();
+    rebuild_();
+  }
+
+  void forward() {
+    if (forward_.empty()) {
+      return;
+    }
+    history_.push_back(current_);
+    current_ = forward_.back();
+    forward_.pop_back();
     scroll_y = 0;
     reset_focus();
     rebuild_();
@@ -72,6 +86,7 @@ class Navigator {
 
   NavState current_{BoardState{}};
   std::vector<NavState> history_;
+  std::vector<NavState> forward_;
   std::function<void()> rebuild_;
   FocusState focus_;
   size_t navbar_element_count_ = 0;

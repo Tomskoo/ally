@@ -46,6 +46,16 @@ auto CommandRegistry::Match(const std::string& prefix) const -> std::vector<cons
   return result;
 }
 
+auto CommandRegistry::FindExact(const std::string& name) const -> const CommandRegistration* {
+  auto lower_name = ToLower(name);
+  for (const auto& cmd : commands_) {
+    if (ToLower(cmd.name) == lower_name) {
+      return &cmd;
+    }
+  }
+  return nullptr;
+}
+
 auto CommandRegistry::Execute(const std::string& raw_input) -> bool {
   if (raw_input.empty()) {
     return false;

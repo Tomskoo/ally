@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "yaml-cpp/yaml.h"
 
 namespace fs = std::filesystem;
@@ -29,7 +29,7 @@ auto generate_stage_ids(const std::vector<models::WorkflowStageCreateInput>& inp
   std::unordered_map<std::string, int> seen;
 
   for (const auto& input : inputs) {
-    auto slug = commands::storage::slugify(input.name);
+    auto slug = storage::slugify(input.name);
     if (seen.count(slug) > 0) {
       ++seen[slug];
       slug += "-" + std::to_string(seen[slug]);
@@ -67,7 +67,7 @@ auto resolve_stage_ids(const std::vector<models::WorkflowStage>& existing,
     if (input.existing_id.has_value() && preserved.count(*input.existing_id) > 0) {
       ids.push_back(*input.existing_id);
     } else {
-      auto slug = commands::storage::slugify(input.name);
+      auto slug = storage::slugify(input.name);
       if (seen.count(slug) > 0) {
         ++seen[slug];
         slug += "-" + std::to_string(seen[slug]);
@@ -204,7 +204,7 @@ auto WorkflowService::create_workflow(const models::CreateWorkflowInput& input) 
 
   auto ids = generate_stage_ids(input.stages);
 
-  auto slug = commands::storage::slugify(input.name);
+  auto slug = storage::slugify(input.name);
   if (slug.empty()) {
     return std::string("Workflow name produces an empty slug");
   }

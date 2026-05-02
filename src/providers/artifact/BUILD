@@ -6,6 +6,6 @@ cc_library(
     hdrs = ["ArtifactService.hpp"],
     visibility = ["//src:__subpackages__"],
     deps = [
-        "//src/commands/storage",
+        "//src/storage",
     ],
 )

@@ -4,7 +4,7 @@ cc_binary(
     name = "user_input_bench",
     srcs = ["main.cpp"],
     deps = [
-        "//src/commands/storage",
+        "//src/storage",
         "//src/components/autocomplete:file_autocomplete",
         "@ftxui//:component",
         "@ftxui//:dom",

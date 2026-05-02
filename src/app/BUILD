@@ -42,8 +42,8 @@ cc_binary(
     deps = [
         "//src/configuration",
         "//src/configuration:input_config",
-        "//src/commands/storage",
-        "//src/commands/task",
+        "//src/commands/navigation",
+        "//src/storage",
         "//src/components/bottom_bar",
         "//src/components/command_bar",
         "//src/components/command_bar:command_bar_state",

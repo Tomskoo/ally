@@ -5,7 +5,7 @@ cc_binary(
     srcs = ["main.cpp"],
     deps = [
         "//src/components/autocomplete:artifact_autocomplete",
-        "//src/commands/storage",
+        "//src/storage",
         "//src/services/watcher:artifact_watcher",
         "//src/services/watcher:watcher_events",
         "//src/services/watcher:watcher_queues",

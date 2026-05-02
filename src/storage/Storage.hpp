@@ -11,7 +11,7 @@
 #include "src/models/Task.hpp"
 #include "src/models/Workflow.hpp"
 
-namespace ally::commands::storage {
+namespace ally::storage {
 
 struct DirEntry {
   std::string name;
@@ -87,4 +87,4 @@ auto GetModelForProvider(const std::filesystem::path& project_root, const std::s
 auto SetModelForProvider(const std::filesystem::path& project_root, const std::string& provider_id,
                          const std::string& model_id) -> void;
 
-}  // namespace ally::commands::storage
+}  // namespace ally::storage

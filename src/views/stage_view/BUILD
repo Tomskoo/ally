@@ -10,7 +10,7 @@ cc_library(
     visibility = ["//src:__subpackages__"],
     deps = [
         "//src/app:app_context",
-        "//src/commands/storage",
+        "//src/storage",
         "//src/components/autocomplete:artifact_autocomplete",
         "//src/components/autocomplete:file_autocomplete",
         "//src/components/autocomplete:command_autocomplete",

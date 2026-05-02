@@ -5,23 +5,23 @@
 #include <string>
 #include <unordered_set>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 
 namespace ally::providers {
 
 FileTaskProvider::FileTaskProvider(std::filesystem::path project_root) : project_root_(std::move(project_root)) {}
 
 auto FileTaskProvider::list_tasks() const -> std::vector<models::Task> {
-  if (!commands::storage::is_initialized(project_root_)) {
+  if (!storage::is_initialized(project_root_)) {
     return {};
   }
 
-  auto ids = commands::storage::list_task_ids(project_root_);
+  auto ids = storage::list_task_ids(project_root_);
   std::vector<models::Task> tasks;
   tasks.reserve(ids.size());
 
   for (const auto& task_id : ids) {
-    auto task = commands::storage::read_task(project_root_, task_id);
+    auto task = storage::read_task(project_root_, task_id);
     if (task.has_value() && !task->archived) {
       tasks.push_back(std::move(*task));
     }
@@ -40,13 +40,13 @@ auto FileTaskProvider::list_tasks() const -> std::vector<models::Task> {
 
 auto FileTaskProvider::create_task(const models::CreateTaskInput& input) -> std::optional<models::Task> {
   try {
-    auto slug = commands::storage::slugify(input.name);
+    auto slug = storage::slugify(input.name);
     if (slug.empty()) {
       return std::nullopt;
     }
 
     // Deduplicate slug
-    auto existing_ids = commands::storage::list_task_ids(project_root_);
+    auto existing_ids = storage::list_task_ids(project_root_);
     auto id_set = std::unordered_set<std::string>(existing_ids.begin(), existing_ids.end());
     auto final_slug = slug;
     int suffix = 1;
@@ -67,11 +67,11 @@ auto FileTaskProvider::create_task(const models::CreateTaskInput& input) -> std:
     task.description = input.description;
     task.archived = false;
 
-    if (!commands::storage::is_initialized(project_root_)) {
-      commands::storage::init_workspace(project_root_);
+    if (!storage::is_initialized(project_root_)) {
+      storage::init_workspace(project_root_);
     }
 
-    if (!commands::storage::write_task(project_root_, task)) {
+    if (!storage::write_task(project_root_, task)) {
       return std::nullopt;
     }
 
@@ -82,15 +82,15 @@ auto FileTaskProvider::create_task(const models::CreateTaskInput& input) -> std:
 }
 
 auto FileTaskProvider::get_task(const std::string& task_id) const -> std::optional<models::Task> {
-  return commands::storage::read_task(project_root_, task_id);
+  return storage::read_task(project_root_, task_id);
 }
 
-auto FileTaskProvider::update_task(const models::Task& task) -> bool { return commands::storage::write_task(project_root_, task); }
+auto FileTaskProvider::update_task(const models::Task& task) -> bool { return storage::write_task(project_root_, task); }
 
 auto FileTaskProvider::create_thread(const std::string& task_id, const models::CreateThreadInput& input)
     -> std::optional<models::Thread> {
   try {
-    auto slug = commands::storage::slugify(input.name);
+    auto slug = storage::slugify(input.name);
     if (slug.empty()) {
       return std::nullopt;
     }
@@ -126,7 +126,7 @@ auto FileTaskProvider::create_thread(const std::string& task_id, const models::C
     thread.last_activity = timestamp;
     thread.archived = false;
 
-    if (!commands::storage::write_thread(project_root_, task_id, thread)) {
+    if (!storage::write_thread(project_root_, task_id, thread)) {
       return std::nullopt;
     }
 
@@ -137,7 +137,7 @@ auto FileTaskProvider::create_thread(const std::string& task_id, const models::C
 }
 
 auto FileTaskProvider::archive_thread(const std::string& task_id, const std::string& thread_id) -> bool {
-  return commands::storage::archive_thread(project_root_, task_id, thread_id);
+  return storage::archive_thread(project_root_, task_id, thread_id);
 }
 
 }  // namespace ally::providers

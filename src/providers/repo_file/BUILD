@@ -6,7 +6,7 @@ cc_library(
     hdrs = ["FileTaskProvider.hpp"],
     visibility = ["//src:__subpackages__"],
     deps = [
-        "//src/commands/storage",
+        "//src/storage",
         "//src/models",
     ],
 )

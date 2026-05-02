@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "src/commands/task/Task.hpp"
 #include "src/style/colour/StageColours.hpp"
 #include "src/utils/time_format.hpp"
 
@@ -24,7 +23,7 @@ constexpr int kActivityWidth = 14;
 }  // namespace
 
 auto task_board(AppContext& ctx, Navigator& nav) -> Component {
-  auto tasks = std::make_shared<std::vector<models::Task>>(commands::task::list_tasks(ctx.task_provider));
+  auto tasks = std::make_shared<std::vector<models::Task>>(ctx.task_provider.list_tasks());
 
   auto entries = std::make_shared<std::vector<std::string>>();
   entries->reserve(tasks->size());

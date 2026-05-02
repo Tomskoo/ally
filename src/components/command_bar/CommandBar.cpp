@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 #include <ftxui/dom/elements.hpp>
 
@@ -25,9 +26,49 @@ auto HasSpace(const std::string& text) -> bool {
   return text.find(' ') != std::string::npos;
 }
 
+/// Extract the argument portion after the command name.
+auto ArgAfterSpace(const std::string& text) -> std::string {
+  auto space = text.find(' ');
+  if (space == std::string::npos) return "";
+  auto start = space + 1;
+  if (start >= text.size()) return "";
+  return text.substr(start);
+}
+
+/// Case-insensitive subsequence match.
+auto FuzzyMatch(std::string_view query, std::string_view target) -> bool {
+  if (query.empty()) return true;
+  size_t qi = 0;
+  for (char c : target) {
+    if (std::tolower(static_cast<unsigned char>(c)) == std::tolower(static_cast<unsigned char>(query[qi]))) {
+      ++qi;
+      if (qi == query.size()) return true;
+    }
+  }
+  return false;
+}
+
+/// Returns fuzzy-filtered argument candidates if in argument mode, empty vector otherwise.
+auto GetArgCandidates(const std::string& input_text, const CommandRegistry& registry) -> std::vector<std::pair<std::string, std::string>> {
+  if (!HasSpace(input_text)) return {};
+  auto* reg = registry.FindExact(FirstWord(input_text));
+  if (!reg || !reg->arg_provider) return {};
+  auto candidates = reg->arg_provider();
+  auto query = ArgAfterSpace(input_text);
+  std::vector<std::pair<std::string, std::string>> filtered;
+  for (const auto& c : candidates) {
+    if (FuzzyMatch(query, c.first)) {
+      filtered.push_back(c);
+    }
+  }
+  return filtered;
+}
+
 void RefreshAutocomplete(CommandBarState& state, const CommandRegistry& registry) {
   if (HasSpace(state.input_text)) {
-    state.autocomplete_open = false;
+    auto filtered = GetArgCandidates(state.input_text, registry);
+    state.autocomplete_open = !filtered.empty();
+    state.autocomplete_selected = std::clamp(state.autocomplete_selected, 0, std::max(0, static_cast<int>(filtered.size()) - 1));
     return;
   }
   auto query = FirstWord(state.input_text);
@@ -66,6 +107,38 @@ auto RenderCommandAutocomplete(const CommandBarState& state, const CommandRegist
     return emptyElement();
   }
 
+  // Argument autocomplete mode.
+  if (HasSpace(state.input_text)) {
+    auto filtered = GetArgCandidates(state.input_text, registry);
+    if (filtered.empty()) return emptyElement();
+
+    int max_items = 8;
+    int item_count = static_cast<int>(filtered.size());
+    int display_count = std::min(item_count, max_items);
+
+    Elements rows;
+    for (int i = 0; i < display_count; ++i) {
+      bool selected = (i == state.autocomplete_selected);
+      Elements row_parts;
+      row_parts.push_back(text(" " + filtered[i].first + " "));
+      if (!filtered[i].second.empty()) {
+        row_parts.push_back(text(filtered[i].second) | dim);
+      }
+      auto row = hbox(std::move(row_parts));
+      if (selected) {
+        row = row | inverted;
+      }
+      rows.push_back(row);
+    }
+
+    if (item_count > max_items) {
+      rows.push_back(text(" +" + std::to_string(item_count - max_items) + " more...") | dim);
+    }
+
+    return vbox(std::move(rows)) | border;
+  }
+
+  // Command name autocomplete mode.
   auto query = FirstWord(state.input_text);
   auto matches = registry.Match(query);
 
@@ -114,8 +187,14 @@ auto HandleCommandBarEvent(CommandBarState& state, CommandRegistry& registry, co
     return true;
   }
 
-  // Enter — execute
+  // Enter — execute (accept arg autocomplete selection first if open)
   if (event == Event::Return) {
+    if (state.autocomplete_open && HasSpace(state.input_text)) {
+      auto filtered = GetArgCandidates(state.input_text, registry);
+      if (!filtered.empty() && state.autocomplete_selected < static_cast<int>(filtered.size())) {
+        state.input_text = FirstWord(state.input_text) + " " + filtered[state.autocomplete_selected].first;
+      }
+    }
     auto cmd = state.input_text;
     state.PushHistory(cmd);
     state.Deactivate();
@@ -140,12 +219,24 @@ auto HandleCommandBarEvent(CommandBarState& state, CommandRegistry& registry, co
   // Tab — accept autocomplete
   if (event == Event::Tab) {
     if (state.autocomplete_open) {
-      auto query = FirstWord(state.input_text);
-      auto matches = registry.Match(query);
-      if (!matches.empty() && state.autocomplete_selected < static_cast<int>(matches.size())) {
-        state.input_text = matches[state.autocomplete_selected]->name + " ";
-        state.cursor_pos = static_cast<int>(state.input_text.size());
-        state.autocomplete_open = false;
+      if (HasSpace(state.input_text)) {
+        // Argument mode: fill selected candidate.
+        auto filtered = GetArgCandidates(state.input_text, registry);
+        if (!filtered.empty() && state.autocomplete_selected < static_cast<int>(filtered.size())) {
+          state.input_text = FirstWord(state.input_text) + " " + filtered[state.autocomplete_selected].first;
+          state.cursor_pos = static_cast<int>(state.input_text.size());
+          state.autocomplete_open = false;
+        }
+      } else {
+        // Command mode: fill command name + space.
+        auto query = FirstWord(state.input_text);
+        auto matches = registry.Match(query);
+        if (!matches.empty() && state.autocomplete_selected < static_cast<int>(matches.size())) {
+          state.input_text = matches[state.autocomplete_selected]->name + " ";
+          state.cursor_pos = static_cast<int>(state.input_text.size());
+          state.autocomplete_open = false;
+          RefreshAutocomplete(state, registry);
+        }
       }
     }
     return true;
@@ -164,9 +255,13 @@ auto HandleCommandBarEvent(CommandBarState& state, CommandRegistry& registry, co
   // Down arrow — history or autocomplete
   if (event == Event::ArrowDown) {
     if (state.autocomplete_open) {
-      auto query = FirstWord(state.input_text);
-      auto matches = registry.Match(query);
-      int max_idx = std::max(0, static_cast<int>(matches.size()) - 1);
+      int count;
+      if (HasSpace(state.input_text)) {
+        count = static_cast<int>(GetArgCandidates(state.input_text, registry).size());
+      } else {
+        count = static_cast<int>(registry.Match(FirstWord(state.input_text)).size());
+      }
+      int max_idx = std::max(0, count - 1);
       state.autocomplete_selected = std::min(state.autocomplete_selected + 1, max_idx);
     } else {
       state.HistoryDown();

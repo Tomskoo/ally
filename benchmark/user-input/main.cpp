@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/components/autocomplete/FileAutocomplete.hpp"
 #include "src/components/autocomplete/Types.hpp"
 
@@ -63,7 +63,7 @@ int main() {
       auto state_copy = ac_state;
       auto root_copy = project_root;
       std::thread([state_copy, root_copy, &screen]() {
-        ally::commands::storage::list_directory_tree(root_copy, 6,
+        ally::storage::list_directory_tree(root_copy, 6,
                                                      [state_copy, &screen](std::vector<ally::autocomplete::DirTreeNode> nodes) {
                                                        std::lock_guard lock(state_copy->mutex);
                                                        state_copy->tree_cache = std::move(nodes);

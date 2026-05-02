@@ -15,7 +15,8 @@
 #include "AppContext.hpp"
 #include "NavState.hpp"
 #include "Navigator.hpp"
-#include "src/commands/storage/Storage.hpp"
+#include "src/commands/navigation/Navigation.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/components/bottom_bar/BottomBar.hpp"
 #include "src/components/command_bar/CommandBar.hpp"
 #include "src/components/command_bar/CommandBarState.hpp"
@@ -85,7 +86,7 @@ auto parse_project_root(int argc, char** argv) -> std::filesystem::path {
     }
   }
   if (project_root.empty()) {
-    project_root = ally::commands::storage::find_project_root();
+    project_root = ally::storage::find_project_root();
   }
   // Resolve symlinks so that efsw real paths match the root used by
   // ParseArtifactPath.  Under `bazel run` the execroot contains symlinks
@@ -409,12 +410,7 @@ auto main(int argc, char* argv[]) -> int {
 
     cmd_registry->Register({"q", "Quit the application", [&screen](const std::string&) { screen.Exit(); }});
     cmd_registry->Register({"quit", "Quit the application", [&screen](const std::string&) { screen.Exit(); }});
-    cmd_registry->Register({"board", "Go to the task board", [&nav](const std::string&) { nav.go(ally::BoardState{}); }});
-    cmd_registry->Register({"back", "Navigate back", [&nav](const std::string&) { nav.back(); }});
-    cmd_registry->Register(
-        {"workflows", "Go to the workflow list", [&nav](const std::string&) { nav.go(ally::WorkflowsState{}); }});
-    cmd_registry->Register({"help", "Show available commands",
-                            [&ctx](const std::string&) { ctx.SetStatus("Commands: :q :board :back :workflows :help"); }});
+    ally::commands::navigation::RegisterCommands(*cmd_registry, ctx, nav);
 
     rebuild_component();
 

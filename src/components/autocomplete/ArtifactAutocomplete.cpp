@@ -8,7 +8,7 @@
 #include <thread>
 #include <utility>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/components/autocomplete/FileAutocomplete.hpp"  // DefaultMatchStrategy
 
 namespace ally::autocomplete {
@@ -251,7 +251,7 @@ void SetupArtifactsListener(const std::shared_ptr<ArtifactAutocompleteState>& st
                             watcher::WatcherBroadcast<watcher::ArtifactChangedEvent>& broadcast, ftxui::ScreenInteractive& screen) {
   std::thread([state, project_root, task_id, thread_id, stages, &broadcast, &screen]() -> void {
     // Initial one-shot load
-    auto artifacts = commands::storage::ListArtifactCompletions(project_root, task_id, thread_id, stages);
+    auto artifacts = storage::ListArtifactCompletions(project_root, task_id, thread_id, stages);
     {
       std::scoped_lock lock(state->mutex);
       state->artifacts_cache = std::move(artifacts);
@@ -265,7 +265,7 @@ void SetupArtifactsListener(const std::shared_ptr<ArtifactAutocompleteState>& st
       auto events = queue->drain();
       if (!events.empty()) {
         // Any artifact change triggers a full re-fetch
-        auto refreshed = commands::storage::ListArtifactCompletions(project_root, task_id, thread_id, stages);
+        auto refreshed = storage::ListArtifactCompletions(project_root, task_id, thread_id, stages);
         {
           std::scoped_lock lock(state->mutex);
           state->artifacts_cache = std::move(refreshed);

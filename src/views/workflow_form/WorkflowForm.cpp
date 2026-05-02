@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/style/form/FormStyle.hpp"
 
 using namespace ftxui;
@@ -21,7 +21,7 @@ namespace ally::views {
 
 namespace {
 
-auto slugify_frontend(const std::string& name) -> std::string { return commands::storage::slugify(name); }
+auto slugify_frontend(const std::string& name) -> std::string { return storage::slugify(name); }
 
 auto default_product(const std::string& name) -> std::string {
   auto slug = slugify_frontend(name);

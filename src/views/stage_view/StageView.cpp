@@ -16,7 +16,7 @@
 #include "src/app/AppContext.hpp"
 #include "src/app/NavState.hpp"
 #include "src/app/Navigator.hpp"
-#include "src/commands/storage/Storage.hpp"
+#include "src/storage/Storage.hpp"
 #include "src/components/autocomplete/ArtifactAutocomplete.hpp"
 #include "src/components/autocomplete/ArtifactTypes.hpp"
 #include "src/components/autocomplete/FileAutocomplete.hpp"
@@ -1229,7 +1229,7 @@ struct StageViewImpl {
         auto model_id = state->chat.filtered_models[current_idx].id;
         auto root = ctx.project_root;
         std::thread([root, provider_id, model_id]() -> void {
-          commands::storage::SetModelForProvider(root, provider_id, model_id);
+          storage::SetModelForProvider(root, provider_id, model_id);
         }).detach();
       }
     }
@@ -2514,7 +2514,7 @@ struct StageViewImpl {
       }
     }
 
-    auto persisted = commands::storage::GetModelForProvider(ctx.project_root, provider_id);
+    auto persisted = storage::GetModelForProvider(ctx.project_root, provider_id);
     state->chat.selected_model_idx = 0;
     if (persisted.has_value()) {
       for (int idx = 0; idx < static_cast<int>(state->chat.filtered_models.size()); ++idx) {
@@ -2560,7 +2560,7 @@ struct StageViewImpl {
 
   void ResolveSession() {
     // 1. Get all persisted session IDs for this stage (active = last).
-    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
+    auto all_ids = storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
 
     std::string resolved_sid;
     size_t active_idx = 0;
@@ -2582,7 +2582,7 @@ struct StageViewImpl {
       auto result = opencode::CreateSession(ctx.opencode_state, ctx.opencode_mutex, req);
       if (opencode::is_ok(result)) {
         resolved_sid = opencode::get_value(result).id;
-        commands::storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, resolved_sid);
+        storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, resolved_sid);
         all_ids.push_back(resolved_sid);
         active_idx = all_ids.size() - 1;
       } else {
@@ -2642,7 +2642,7 @@ struct StageViewImpl {
   }
 
   void CreateNewSession() {
-    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
+    auto all_ids = storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
 
     opencode::CreateSessionRequest req;
     req.title = task_id + " - " + stage + " #" + std::to_string(all_ids.size() + 1);
@@ -2655,7 +2655,7 @@ struct StageViewImpl {
     }
 
     auto new_sid = opencode::get_value(result).id;
-    commands::storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, new_sid);
+    storage::AppendStageSessionId(ctx.project_root, task_id, thread_id, stage, new_sid);
     all_ids.push_back(new_sid);
 
     {
@@ -2683,7 +2683,7 @@ struct StageViewImpl {
   }
 
   void SwitchSession(int direction) {
-    auto all_ids = commands::storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
+    auto all_ids = storage::GetStageSessionIds(ctx.project_root, task_id, thread_id, stage);
     if (all_ids.size() <= 1) { return; }
 
     size_t current;
@@ -2698,7 +2698,7 @@ struct StageViewImpl {
     auto new_idx = static_cast<size_t>(target);
     auto& target_sid = all_ids[new_idx];
 
-    commands::storage::SetActiveStageSession(ctx.project_root, task_id, thread_id, stage, target_sid);
+    storage::SetActiveStageSession(ctx.project_root, task_id, thread_id, stage, target_sid);
 
     {
       std::scoped_lock lock(state->mtx);
@@ -2759,7 +2759,7 @@ auto stage_view(AppContext& ctx, Navigator& nav, ScreenInteractive& screen, cons
         auto root = impl->ctx.project_root;
         auto& scr = impl->screen;
         std::thread([state_copy, root, &scr]() -> void {
-          commands::storage::list_directory_tree(root, 6, [state_copy, &scr](std::vector<autocomplete::DirTreeNode> nodes) -> void {
+          storage::list_directory_tree(root, 6, [state_copy, &scr](std::vector<autocomplete::DirTreeNode> nodes) -> void {
             std::scoped_lock lock(state_copy->mutex);
             state_copy->tree_cache = std::move(nodes);
             scr.PostEvent(Event::Custom);
