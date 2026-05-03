@@ -41,6 +41,7 @@ cc_binary(
     visibility = ["//:__pkg__"],
     deps = [
         "//src/configuration",
+        "//src/configuration:hotkey_parser",
         "//src/configuration:input_config",
         "//src/commands/navigation",
         "//src/storage",

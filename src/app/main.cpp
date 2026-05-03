@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <exception>
+#include <iostream>
 #include <filesystem>
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/mouse.hpp>
@@ -25,6 +26,7 @@
 #include "src/components/splash/Splash.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
 #include "src/configuration/Configuration.hpp"
+#include "src/configuration/HotkeyParser.hpp"
 #include "src/configuration/InputConfig.hpp"
 #include "src/opencode/Error.hpp"
 #include "src/opencode/Lifecycle.hpp"
@@ -330,6 +332,7 @@ auto main(int argc, char* argv[]) -> int {
     auto opencode_config = ally::configuration::LoadOpenCodeConfig(project_root);
     auto rendering_config = ally::configuration::LoadRenderingConfig(project_root);
     auto input_config = ally::configuration::DefaultInputConfig();
+    ally::configuration::ApplyHotkeyOverrides(project_root, input_config);
 
     ally::AppContext ctx{
         .project_root = project_root,
@@ -494,7 +497,8 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     return 0;
-  } catch (const std::exception&) {
+  } catch (const std::exception& e) {
+    std::cerr << "Fatal: " << e.what() << "\n";
     return 1;
   }
 }

@@ -26,3 +26,15 @@ cc_library(
         "@ftxui//:component",
     ],
 )
+
+cc_library(
+    name = "hotkey_parser",
+    srcs = ["HotkeyParser.cpp"],
+    hdrs = ["HotkeyParser.hpp"],
+    visibility = ["//src:__subpackages__"],
+    deps = [
+        ":input_config",
+        "@ftxui//:component",
+        "@yaml-cpp",
+    ],
+)

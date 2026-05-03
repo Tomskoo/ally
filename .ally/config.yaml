@@ -7,3 +7,77 @@ rendering:
   theme: monokai-pro
   query_dirs:
     - ~/.local/share/nvim/lazy/nvim-treesitter/queries
+hotkeys:
+  chat.next_message:
+    - J
+    - <shift>+down
+  chat.prev_message:
+    - K
+    - <shift>+up
+  chat.next_user_message:
+    - <alt>+j
+    - <alt>+down
+  chat.prev_user_message:
+    - <alt>+k
+    - <alt>+up
+  chat.send_message:
+    - <alt>+<enter>
+  chat.toggle_panel:
+    - <tab>
+    - <shift>+tab
+  chat.new_session:
+    - N
+  chat.prev_session:
+    - "{"
+  chat.next_session:
+    - "}"
+  navigation.cycle_right:
+    - "]"
+  navigation.cycle_left:
+    - "["
+  navigation.escape:
+    - <escape>
+  navigation.focus_provider:
+    - <alt>+p
+  navigation.toggle_quick_chat:
+    - <alt>+w
+  vim.up:
+    - k
+    - <up>
+  vim.down:
+    - j
+    - <down>
+  vim.left:
+    - h
+    - <left>
+  vim.right:
+    - l
+    - <right>
+  vim.enter_insert:
+    - i
+  vim.enter_visual:
+    - v
+  vim.exit_visual:
+    - <escape>
+    - n
+    - v
+  vim.yank:
+    - y
+  vim.dirty_yank: []
+  artifact.scroll_up:
+    - <up>
+  artifact.scroll_down:
+    - <down>
+  artifact.toggle_render:
+    - r
+  artifact.force_reload:
+    - R
+  autocomplete.next:
+    - <down>
+  autocomplete.prev:
+    - <up>
+  autocomplete.dismiss:
+    - <escape>
+  autocomplete.select:
+    - <enter>
+    - <tab>
