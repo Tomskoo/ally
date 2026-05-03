@@ -4,7 +4,10 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
+
+#include "src/configuration/ConfigError.hpp"
 
 namespace ally::configuration {
 
@@ -20,8 +23,11 @@ struct RenderingConfig {
   std::optional<std::string> theme;
 };
 
-auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> OpenCodeConfig;
-auto LoadRenderingConfig(const std::filesystem::path& project_root) -> RenderingConfig;
+template <typename T>
+using ConfigResult = std::variant<T, ConfigError>;
+
+auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> ConfigResult<OpenCodeConfig>;
+auto LoadRenderingConfig(const std::filesystem::path& project_root) -> ConfigResult<RenderingConfig>;
 auto SaveModelForProvider(const std::filesystem::path& project_root, const std::string& provider_id,
                           const std::string& model_id) -> void;
 

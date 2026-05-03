@@ -8,17 +8,17 @@
 
 namespace ally::configuration {
 
-auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> OpenCodeConfig {
+auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> ConfigResult<OpenCodeConfig> {
   auto config_path = project_root / ".ally" / "config.yaml";
   if (!std::filesystem::exists(config_path)) {
-    return {};
+    return OpenCodeConfig{};
   }
 
   try {
     auto root = YAML::LoadFile(config_path.string());
     auto opencode = root["opencode"];
     if (!opencode) {
-      return {};
+      return OpenCodeConfig{};
     }
 
     OpenCodeConfig config;
@@ -37,22 +37,22 @@ auto LoadOpenCodeConfig(const std::filesystem::path& project_root) -> OpenCodeCo
       }
     }
     return config;
-  } catch (const YAML::Exception&) {
-    return {};
+  } catch (const YAML::Exception& e) {
+    return ConfigError{config_path.string(), e.what()};
   }
 }
 
-auto LoadRenderingConfig(const std::filesystem::path& project_root) -> RenderingConfig {
+auto LoadRenderingConfig(const std::filesystem::path& project_root) -> ConfigResult<RenderingConfig> {
   auto config_path = project_root / ".ally" / "config.yaml";
   if (!std::filesystem::exists(config_path)) {
-    return {};
+    return RenderingConfig{};
   }
 
   try {
     auto root = YAML::LoadFile(config_path.string());
     auto rendering = root["rendering"];
     if (!rendering) {
-      return {};
+      return RenderingConfig{};
     }
 
     RenderingConfig config;
@@ -70,8 +70,8 @@ auto LoadRenderingConfig(const std::filesystem::path& project_root) -> Rendering
       }
     }
     return config;
-  } catch (const YAML::Exception&) {
-    return {};
+  } catch (const YAML::Exception& e) {
+    return ConfigError{config_path.string(), e.what()};
   }
 }
 

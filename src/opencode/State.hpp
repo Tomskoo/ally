@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "src/opencode/Client.hpp"
+#include "src/opencode/Error.hpp"
 #include "src/opencode/Types.hpp"
 
 namespace ally::opencode {
@@ -23,6 +24,7 @@ enum class ServerStatus : std::uint8_t { Starting, Running, Stopped };
 
 struct ServerCrashedStatus {
   std::string message;
+  std::optional<OpenCodeErrorKind> error_kind;
 };
 
 using ServerStatusVariant = std::variant<ServerStatus, ServerCrashedStatus>;

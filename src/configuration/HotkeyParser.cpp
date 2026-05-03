@@ -347,23 +347,23 @@ auto ParseHotkey(const std::string& spec) -> Event {
 // ---------------------------------------------------------------------------
 
 auto ApplyHotkeyOverrides(const std::filesystem::path& project_root,
-                          InputConfig& config) -> void {
+                          InputConfig& config) -> std::optional<ConfigError> {
   auto config_path = project_root / ".ally" / "config.yaml";
   if (!std::filesystem::exists(config_path)) {
-    return;
+    return std::nullopt;
   }
 
   YAML::Node root;
   try {
     root = YAML::LoadFile(config_path.string());
   } catch (const YAML::Exception& e) {
-    throw std::runtime_error("Failed to parse " + config_path.string() + ": " +
-                             e.what());
+    return ConfigError{config_path.string(),
+                       "Failed to parse YAML: " + std::string(e.what())};
   }
 
   auto hotkeys = root["hotkeys"];
   if (!hotkeys || !hotkeys.IsMap()) {
-    return;  // No hotkeys section or not a map — nothing to do.
+    return std::nullopt;  // No hotkeys section or not a map — nothing to do.
   }
 
   auto action_map = BuildActionMap(config);
@@ -372,16 +372,16 @@ auto ApplyHotkeyOverrides(const std::filesystem::path& project_root,
     auto action_name = entry.first.as<std::string>();
     auto it = action_map.find(action_name);
     if (it == action_map.end()) {
-      throw std::runtime_error(
+      return ConfigError{
+          config_path.string(),
           "Unknown hotkey action '" + action_name +
-          "' in " + config_path.string() +
-          ". Valid actions: " + ValidActionList(action_map));
+              "'. Valid actions: " + ValidActionList(action_map)};
     }
 
     if (!entry.second.IsSequence()) {
-      throw std::runtime_error(
-          "Hotkey action '" + action_name + "' in " + config_path.string() +
-          " must be a list of hotkey strings");
+      return ConfigError{
+          config_path.string(),
+          "Hotkey action '" + action_name + "' must be a list of hotkey strings"};
     }
 
     std::vector<Event> events;
@@ -391,13 +391,16 @@ auto ApplyHotkeyOverrides(const std::filesystem::path& project_root,
       try {
         events.push_back(ParseHotkey(key_str));
       } catch (const std::runtime_error& e) {
-        throw std::runtime_error("In action '" + action_name + "': " +
-                                 e.what());
+        return ConfigError{
+            config_path.string(),
+            "In action '" + action_name + "': " + std::string(e.what())};
       }
     }
 
     it->second->events = std::move(events);
   }
+
+  return std::nullopt;
 }
 
 }  // namespace ally::configuration

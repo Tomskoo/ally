@@ -105,7 +105,7 @@ auto workflow_list(AppContext& ctx, Navigator& nav) -> Component {
       return vbox({
           header,
           separator(),
-          text("No workflows yet. Create one to get started.") | dim | center,
+          text("No workflows yet. Press 'n' to create a workflow.") | dim | center,
       });
     }
 

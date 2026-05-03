@@ -32,6 +32,40 @@ auto find_project_root() -> fs::path {
 
 auto is_initialized(const fs::path& project_root) -> bool { return fs::is_directory(project_root / ".ally"); }
 
+static constexpr std::string_view kDefaultConfig = R"(# ally configuration
+#
+# opencode:
+#   server_url: http://127.0.0.1:3000  # Connect to existing server (default: auto-spawn)
+#   default_provider: opencode          # Provider to use by default
+#   lock_provider: false                # Prevent provider switching
+#   model_per_provider:
+#     opencode: claude-sonnet-4-20250514
+#
+# rendering:
+#   theme: monokai-pro
+#   query_dirs:
+#     - ~/.local/share/nvim/lazy/nvim-treesitter/queries
+#
+# hotkeys:
+#   chat.send_message: ["<alt>+<enter>"]
+)";
+
+auto ensure_workspace_exists(const fs::path& project_root) -> bool {
+  auto ally_dir = project_root / ".ally";
+  bool freshly_created = !fs::is_directory(ally_dir);
+
+  fs::create_directories(ally_dir / "tasks");
+  fs::create_directories(ally_dir / "workflows");
+
+  auto config_path = ally_dir / "config.yaml";
+  if (!fs::exists(config_path)) {
+    std::ofstream out(config_path);
+    out << kDefaultConfig;
+  }
+
+  return freshly_created;
+}
+
 auto list_task_ids(const fs::path& project_root) -> std::vector<std::string> {
   auto tasks_dir = project_root / ".ally" / "tasks";
   if (!fs::is_directory(tasks_dir)) {
@@ -635,7 +669,11 @@ auto SetActiveStageSession(const fs::path& project_root, const std::string& task
 }
 
 auto GetModelForProvider(const fs::path& project_root, const std::string& provider_id) -> std::optional<std::string> {
-  auto config = configuration::LoadOpenCodeConfig(project_root);
+  auto result = configuration::LoadOpenCodeConfig(project_root);
+  if (!std::holds_alternative<configuration::OpenCodeConfig>(result)) {
+    return std::nullopt;
+  }
+  auto& config = std::get<configuration::OpenCodeConfig>(result);
   auto it = config.model_per_provider.find(provider_id);
   if (it != config.model_per_provider.end()) {
     return it->second;

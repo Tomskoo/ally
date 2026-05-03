@@ -74,7 +74,7 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
       menu,
   });
 
-  return Renderer(layout, [new_task_btn, menu, tasks, entries, selected] -> Element {
+  return Renderer(layout, [&ctx, new_task_btn, menu, tasks, entries, selected] -> Element {
     auto header = hbox({
         text("Tasks") | bold,
         filler(),
@@ -92,12 +92,23 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
     });
 
     if (tasks->empty()) {
+      Elements empty_content;
+      if (ctx.is_fresh_workspace) {
+        empty_content.push_back(text("Welcome to ally!") | bold | center);
+        empty_content.push_back(text(""));
+        empty_content.push_back(text("Your workspace has been initialized at .ally/") | dim | center);
+        empty_content.push_back(text("Press 'n' to create a task, or '?' for help") | dim | center);
+      } else {
+        empty_content.push_back(text("No tasks yet.") | dim | center);
+        empty_content.push_back(text(""));
+        empty_content.push_back(text("Press 'n' to create your first task") | dim | center);
+      }
       return vbox({
           header,
           separator(),
           table_header,
           separator(),
-          text("No tasks yet.") | dim | center,
+          vbox(std::move(empty_content)),
       });
     }
 

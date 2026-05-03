@@ -33,6 +33,10 @@ auto find_project_root() -> std::filesystem::path;
 
 auto is_initialized(const std::filesystem::path& project_root) -> bool;
 
+/// Ensure the .ally/ workspace exists with required subdirectories and a default
+/// config.yaml.  Returns true if the workspace was freshly created (first launch).
+auto ensure_workspace_exists(const std::filesystem::path& project_root) -> bool;
+
 auto list_task_ids(const std::filesystem::path& project_root) -> std::vector<std::string>;
 
 auto read_task(const std::filesystem::path& project_root, const std::string& task_id) -> std::optional<models::Task>;

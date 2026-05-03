@@ -25,17 +25,17 @@ auto ParseServerStatus(const opencode::ServerStatusVariant& variant) -> ServiceS
         if constexpr (std::is_same_v<T, opencode::ServerStatus>) {
           switch (val) {
             case opencode::ServerStatus::Running:
-              return {ServiceStatusKind::Running, {}};
+              return {ServiceStatusKind::Running, {}, {}};
             case opencode::ServerStatus::Starting:
-              return {ServiceStatusKind::Starting, {}};
+              return {ServiceStatusKind::Starting, {}, {}};
             case opencode::ServerStatus::Stopped:
-              return {ServiceStatusKind::Stopped, {}};
+              return {ServiceStatusKind::Stopped, {}, {}};
           }
-          return {ServiceStatusKind::Unknown, {}};
+          return {ServiceStatusKind::Unknown, {}, {}};
         } else if constexpr (std::is_same_v<T, opencode::ServerCrashedStatus>) {
-          return {ServiceStatusKind::Crashed, val.message};
+          return {ServiceStatusKind::Crashed, val.message, val.error_kind};
         } else {
-          return {ServiceStatusKind::Unknown, {}};
+          return {ServiceStatusKind::Unknown, {}, {}};
         }
       },
       variant);
@@ -153,6 +153,10 @@ void HealthMonitor::PollLoop() {
       state_->error_msg = error_msg;
       state_->provider_auth_ok = provider_auth_ok;
       state_->aggregate = aggregate;
+      // Auto-expand when binary is missing so user sees install instructions
+      if (status.error_kind == opencode::OpenCodeErrorKind::BinaryNotFound) {
+        state_->expanded = true;
+      }
     }
 
     screen_.PostEvent(Event::Custom);
@@ -202,7 +206,21 @@ auto HealthMonitor::GetComponent() -> ftxui::Component {
       rows.push_back(text(*state->error_msg) | color(Color::Red));
     }
 
-    return vbox(std::move(rows)) | border | size(WIDTH, EQUAL, 40);
+    if (state->status.error_kind == opencode::OpenCodeErrorKind::BinaryNotFound) {
+      rows.push_back(text(""));
+      rows.push_back(text("OPENCODE NOT FOUND") | bold | color(Color::Yellow));
+      rows.push_back(separator());
+      rows.push_back(text("The 'opencode' binary is not") | dim);
+      rows.push_back(text("installed or not in your PATH.") | dim);
+      rows.push_back(text(""));
+      rows.push_back(text("Install:") | bold);
+      rows.push_back(text("  brew install sst/tap/opencode") | dim);
+      rows.push_back(text("  go install github.com/sst/opencode@latest") | dim);
+      rows.push_back(text(""));
+      rows.push_back(text("Then relaunch ally.") | dim);
+    }
+
+    return vbox(std::move(rows)) | border | size(WIDTH, EQUAL, 46);
   });
 }
 

@@ -50,6 +50,7 @@ cc_binary(
         "//src/components/command_bar:command_bar_state",
         "//src/components/command_bar:command_registry",
         "//src/components/nav_bar",
+        "//src/components/error_screen",
         "//src/components/scrollable",
         "//src/components/splash",
         "//src/opencode:error",

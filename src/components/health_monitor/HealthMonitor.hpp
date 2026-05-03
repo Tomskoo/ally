@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "src/app/AppContext.hpp"
+#include "src/opencode/Error.hpp"
 
 namespace ally::components {
 
@@ -31,6 +32,7 @@ enum class ServiceStatusKind : uint8_t {
 struct ServiceStatus {
   ServiceStatusKind kind = ServiceStatusKind::Unknown;
   std::string crash_message;
+  std::optional<opencode::OpenCodeErrorKind> error_kind;
 };
 
 struct HealthMonitorState {

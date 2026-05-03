@@ -30,6 +30,8 @@ struct AppContext {
   providers::WorkflowService& workflow_service;
   providers::ArtifactService& artifact_service;
 
+  bool is_fresh_workspace{false};
+
   std::optional<models::Task> current_task;
   std::vector<std::pair<std::string, std::string>> recent_tasks;
 

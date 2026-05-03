@@ -23,6 +23,7 @@
 #include "src/components/command_bar/CommandBarState.hpp"
 #include "src/components/command_bar/CommandRegistry.hpp"
 #include "src/components/nav_bar/NavBar.hpp"
+#include "src/components/error_screen/ErrorScreen.hpp"
 #include "src/components/splash/Splash.hpp"
 #include "src/components/scrollable/ScrollableNode.hpp"
 #include "src/configuration/Configuration.hpp"
@@ -110,7 +111,8 @@ auto init_opencode_server(ally::AppContext& ctx, const ally::configuration::Open
       ctx.opencode_state.client = ally::opencode::OpenCodeClient::Create(url);
       ctx.opencode_state.status = ally::opencode::ServerStatus::Running;
     } else {
-      ctx.opencode_state.status = ally::opencode::ServerCrashedStatus{ally::opencode::get_error(health).message};
+      auto& err = ally::opencode::get_error(health);
+      ctx.opencode_state.status = ally::opencode::ServerCrashedStatus{err.message, err.kind};
     }
     return;
   }
@@ -123,7 +125,8 @@ auto init_opencode_server(ally::AppContext& ctx, const ally::configuration::Open
     ctx.opencode_state.client = ally::opencode::OpenCodeClient::Create(proc.base_url);
     ctx.opencode_state.status = ally::opencode::ServerStatus::Running;
   } else {
-    ctx.opencode_state.status = ally::opencode::ServerCrashedStatus{ally::opencode::get_error(spawn_result).message};
+    auto& err = ally::opencode::get_error(spawn_result);
+    ctx.opencode_state.status = ally::opencode::ServerCrashedStatus{err.message, err.kind};
   }
 }
 
@@ -324,18 +327,41 @@ auto main(int argc, char* argv[]) -> int {
     bool show_splash = !has_flag(argc, argv, "--skip-splash");
 
     auto project_root = parse_project_root(argc, argv);
+    bool is_fresh = ally::storage::ensure_workspace_exists(project_root);
 
     auto provider = ally::providers::FileTaskProvider(project_root);
     auto workflow_service = ally::providers::WorkflowService(project_root);
     auto artifact_service = ally::providers::ArtifactService(project_root);
 
-    auto opencode_config = ally::configuration::LoadOpenCodeConfig(project_root);
-    auto rendering_config = ally::configuration::LoadRenderingConfig(project_root);
+    auto opencode_config_result = ally::configuration::LoadOpenCodeConfig(project_root);
+    if (std::holds_alternative<ally::configuration::ConfigError>(opencode_config_result)) {
+      auto err_screen = ally::components::ConfigErrorScreen(
+          screen, std::get<ally::configuration::ConfigError>(opencode_config_result));
+      screen.Loop(err_screen);
+      return 1;
+    }
+    auto opencode_config = std::get<ally::configuration::OpenCodeConfig>(opencode_config_result);
+
+    auto rendering_config_result = ally::configuration::LoadRenderingConfig(project_root);
+    if (std::holds_alternative<ally::configuration::ConfigError>(rendering_config_result)) {
+      auto err_screen = ally::components::ConfigErrorScreen(
+          screen, std::get<ally::configuration::ConfigError>(rendering_config_result));
+      screen.Loop(err_screen);
+      return 1;
+    }
+    auto rendering_config = std::get<ally::configuration::RenderingConfig>(rendering_config_result);
+
     auto input_config = ally::configuration::DefaultInputConfig();
-    ally::configuration::ApplyHotkeyOverrides(project_root, input_config);
+    auto hotkey_err = ally::configuration::ApplyHotkeyOverrides(project_root, input_config);
+    if (hotkey_err.has_value()) {
+      auto err_screen = ally::components::ConfigErrorScreen(screen, *hotkey_err);
+      screen.Loop(err_screen);
+      return 1;
+    }
 
     ally::AppContext ctx{
         .project_root = project_root,
+        .is_fresh_workspace = is_fresh,
         .input_config = input_config,
         .task_provider = provider,
         .workflow_service = workflow_service,
