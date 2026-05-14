@@ -58,6 +58,9 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 constexpr int kScrollLines = 3;
 
+// Bump on each release tag.
+constexpr const char* kVersion = "0.1.0-dev";
+
 auto has_flag(int argc, char** argv, const char* flag) -> bool {
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == flag) return true;
@@ -322,6 +325,11 @@ auto handle_app_event(const Event& event, ally::Navigator& nav, const AppCompone
 
 auto main(int argc, char* argv[]) -> int {
   try {
+    if (has_flag(argc, argv, "--version") || has_flag(argc, argv, "-v")) {
+      std::cout << "ally " << kVersion << '\n';
+      return 0;
+    }
+
     auto screen = ScreenInteractive::Fullscreen();
 
     bool show_splash = !has_flag(argc, argv, "--skip-splash");

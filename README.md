@@ -4,7 +4,7 @@
 
 <!-- screenshot: hero GIF showing ally in action — stage view with chat + artifact panels -->
 
-ally is a terminal UI that sits on top of your AI coding harness and gives it structure. Define multi-stage workflows that match how you actually engineer — research, plan, implement — and let ally orchestrate your AI agents through each phase. If you live in the terminal and use VIM keybindings, ally feels like home.
+ally is a terminal UI that sits on top of your AI coding harness and gives it structure. Define multi-stage workflows that match how you actually engineer and let ally orchestrate your AI agents through each phase. If you live in the terminal and use VIM keybindings, ally feels like home.
 
 ## Why ally
 
@@ -21,10 +21,19 @@ ally fixes this with four abstractions:
 
 ## Quick Start
 
-1. **Download** the latest release for your platform from [GitHub Releases](https://github.com/anthropics/ally/releases):
+1. **Install ally.**
+
+   **Homebrew (macOS & Linux):**
    ```bash
-   # macOS ARM64
-   curl -L https://github.com/anthropics/ally/releases/latest/download/ally-darwin-arm64.tar.gz | tar xz
+   brew tap Tomskoo/ally
+   brew install ally
+   ```
+
+   **Or download a tarball** from [GitHub Releases](https://github.com/Tomskoo/ally/releases):
+   ```bash
+   # macOS ARM64 (Apple Silicon)
+   curl -L https://github.com/Tomskoo/ally/releases/latest/download/ally-darwin-arm64.tar.gz | tar xz
+   xattr -d com.apple.quarantine ally/ally   # macOS: remove Gatekeeper quarantine
    ```
 
 2. **Start OpenCode** — ally connects to a running [OpenCode](https://github.com/anthropics/opencode) server:
@@ -34,7 +43,8 @@ ally fixes this with four abstractions:
 
 3. **Run ally** in your project directory:
    ```bash
-   ./ally
+   ally        # if installed via brew
+   ./ally/ally # if extracted from a tarball
    ```
 
 4. **Create your first task** from the board view, assign a workflow, and start working.
@@ -96,9 +106,7 @@ stages:
     starting_prompt: ""
 ```
 
-You can create workflows through the TUI (`:workflows`) or by writing YAML directly.
-
-<!-- screenshot: workflow list view -->
+You can create workflows through the TUI (command `:workflows`) or by writing YAML directly.
 
 ## The Stage View
 
@@ -110,8 +118,6 @@ The stage view is where you do your work. It has two panels:
 Switch between panels with `Tab`. Cycle through stages with `[` and `]`.
 
 Each stage maintains independent sessions. Switch sessions with `{`/`}`, or start a fresh one with `N` — the previous session is preserved and you can return to it.
-
-<!-- screenshot: stage view with chat panel and artifact panel side by side -->
 
 ## Commands
 
@@ -253,16 +259,19 @@ Pre-built binaries are available for:
 
 - macOS ARM64 (Apple Silicon)
 - macOS x86_64 (Intel)
-- Linux x86_64
+- Linux x86_64 (glibc ≥ 2.35)
+- Linux arm64 (glibc ≥ 2.35)
 
-Download from [GitHub Releases](https://github.com/anthropics/ally/releases).
+Windows: run the Linux x86_64 binary inside WSL2. A native Windows build is planned for a future release.
+
+Download from [GitHub Releases](https://github.com/Tomskoo/ally/releases) or install via `brew tap Tomskoo/ally && brew install ally`.
 
 ## Building from Source
 
 Requires [Bazel](https://bazel.build/) (or [Bazelisk](https://github.com/bazelbuild/bazelisk)).
 
 ```bash
-git clone https://github.com/anthropics/ally.git
+git clone https://github.com/Tomskoo/ally.git
 cd ally
 bazel build //src/app:ally
 ```

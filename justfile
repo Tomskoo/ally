@@ -25,8 +25,11 @@ build:
 release:
     bazel build --config=release //src/app:ally_release
     mkdir -p dist
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]'); \
+    ARCH=$(uname -m); \
+    case "$ARCH" in aarch64) ARCH=arm64 ;; esac; \
     cp bazel-bin/src/app/ally_release.tar.gz \
-       dist/ally-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m).tar.gz
+       dist/ally-$OS-$ARCH.tar.gz
 
 # Remove release artifacts
 release-clean:
