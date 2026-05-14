@@ -113,4 +113,20 @@ auto HighlightTheme::Resolve(std::string_view capture) const -> ftxui::Color {
   return fg_;
 }
 
+auto HighlightTheme::TryResolve(std::string_view capture) const -> std::optional<ftxui::Color> {
+  std::string key(capture);
+  while (true) {
+    auto iter = captures_.find(key);
+    if (iter != captures_.end()) {
+      return iter->second;
+    }
+    auto dot = key.rfind('.');
+    if (dot == std::string::npos) {
+      break;
+    }
+    key = key.substr(0, dot);
+  }
+  return std::nullopt;
+}
+
 }  // namespace ally::rendering

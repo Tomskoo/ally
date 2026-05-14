@@ -311,7 +311,14 @@ auto RunHighlightQuery(CompiledLang& lang, TSNode root, const std::string& code)
 }  // namespace
 
 TreeSitterRenderer::TreeSitterRenderer(HighlightTheme theme, std::vector<std::filesystem::path> query_dirs)
-    : store_(std::move(theme), std::move(query_dirs)) {}
+    : theme_(theme), store_(std::move(theme), std::move(query_dirs)) {}
+
+auto TreeSitterRenderer::InlineCodeStyle() const -> Decorator {
+  if (auto col = theme_.TryResolve("markup.raw")) {
+    return color(*col);
+  }
+  return inverted;
+}
 
 auto TreeSitterRenderer::RenderCodeBlock(const std::string& code, const std::string& language) -> Element {
   auto* lang = store_.Get(language);

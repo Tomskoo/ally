@@ -4,6 +4,7 @@
 #include <cmark-gfm.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/dom/flexbox_config.hpp>
@@ -16,13 +17,35 @@ namespace ally::rendering {
 
 namespace {
 
-// Split a string into word-level text() elements, preserving the gap between
-// words so flexbox can reflow them. Each word becomes one Element.
-void SplitWords(const std::string& str, const Decorator& style, Elements& out) {
-  std::istringstream stream(str);
-  std::string word;
-  while (stream >> word) {
-    out.push_back(text(word) | style);
+// Split a string into word-level text() elements so flexbox can reflow them.
+// Whitespace is preserved as it appeared in the source: a trailing space is
+// embedded into the word's text element only when whitespace actually follows
+// it (so adjacent inline elements with no source-space between them — e.g.
+// "(`code`)" — render tight, while space-separated words keep their gap
+// without relying on a flexbox gap, which would visibly pad styled spans).
+void SplitWords(const std::string& str, Elements& out) {
+  const size_t len = str.size();
+  size_t pos = 0;
+  bool leading_ws = false;
+  while (pos < len && (std::isspace(static_cast<unsigned char>(str[pos])) != 0)) {
+    leading_ws = true;
+    ++pos;
+  }
+  if (leading_ws) {
+    out.push_back(text(" "));
+  }
+  while (pos < len) {
+    const size_t start = pos;
+    while (pos < len && (std::isspace(static_cast<unsigned char>(str[pos])) == 0)) {
+      ++pos;
+    }
+    std::string word = str.substr(start, pos - start);
+    bool trailing_ws = false;
+    while (pos < len && (std::isspace(static_cast<unsigned char>(str[pos])) != 0)) {
+      trailing_ws = true;
+      ++pos;
+    }
+    out.push_back(text(trailing_ws ? word + " " : word));
   }
 }
 
@@ -44,55 +67,72 @@ auto CollectText(cmark_node* node) -> std::string {
   return result;
 }
 
-// Collect inline content as word-level elements with styling, suitable for
-// flexbox word-wrapping. Each word is a separate Element with the appropriate
-// decorator (bold, dim, inverted, etc.).
-void CollectInlineWords(cmark_node* node, Elements& words) {
+// Collect inline content as a sequence of Elements suitable for flexbox
+// word-wrapping. Unstyled text is split into per-word elements (each with a
+// trailing space) so a paragraph can reflow. Styled spans (bold, italic,
+// inline code, link) are emitted as a single atomic Element per span — this
+// avoids per-word splitting inside a styled run and keeps the styled region
+// tight against its neighbors. Styled→styled boundaries get an explicit
+// separator since neither side carries a trailing space.
+void CollectInlineWords(cmark_node* node, Elements& words, const Decorator& inline_code_style) {
+  bool prev_was_styled = false;
+  auto push_styled = [&](Element styled) -> void {
+    if (prev_was_styled) {
+      words.push_back(text(" "));
+    }
+    words.push_back(std::move(styled));
+    prev_was_styled = true;
+  };
   for (auto* child = cmark_node_first_child(node); child != nullptr; child = cmark_node_next(child)) {
     switch (cmark_node_get_type(child)) {
       case CMARK_NODE_TEXT: {
         const auto* lit = cmark_node_get_literal(child);
-        if (lit != nullptr) { SplitWords(std::string(lit), nothing, words);
-}
+        if (lit != nullptr) {
+          SplitWords(std::string(lit), words);
+        }
+        prev_was_styled = false;
         break;
       }
       case CMARK_NODE_STRONG: {
         auto inner = CollectText(child);
-        SplitWords(inner, bold, words);
+        push_styled(text(inner) | bold);
         break;
       }
       case CMARK_NODE_EMPH: {
         auto inner = CollectText(child);
-        SplitWords(inner, dim, words);
+        push_styled(text(inner) | dim);
         break;
       }
       case CMARK_NODE_CODE: {
         const auto* lit = cmark_node_get_literal(child);
-        if (lit != nullptr) { words.push_back(text(std::string(lit)) | inverted);
-}
+        if (lit != nullptr) {
+          push_styled(text(std::string(lit)) | inline_code_style);
+        }
         break;
       }
       case CMARK_NODE_LINK: {
         auto inner = CollectText(child);
-        words.push_back(text("[" + inner + "]") | underlined | color(Color::Blue));
+        push_styled(text("[" + inner + "]") | underlined | color(Color::Blue));
         break;
       }
       case CMARK_NODE_SOFTBREAK:
       case CMARK_NODE_LINEBREAK:
         words.push_back(nullptr);  // sentinel for line break
+        prev_was_styled = false;
         break;
       default:
-        CollectInlineWords(child, words);
+        CollectInlineWords(child, words, inline_code_style);
+        prev_was_styled = false;
         break;
     }
   }
 }
 
 // Render inline content as word-wrapped lines, respecting hard/soft breaks.
-auto RenderInlineWrapped(cmark_node* node) -> Element {
-  static const auto config = FlexboxConfig().SetGap(1, 0);
+auto RenderInlineWrapped(cmark_node* node, const Decorator& inline_code_style) -> Element {
+  static const auto config = FlexboxConfig().SetGap(0, 0);
   Elements words;
-  CollectInlineWords(node, words);
+  CollectInlineWords(node, words, inline_code_style);
   if (words.empty()) { return text("");
 }
 
@@ -193,7 +233,7 @@ auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element {
       return vbox(RenderChildren(node, renderer));
 
     case CMARK_NODE_PARAGRAPH:
-      return RenderInlineWrapped(node);
+      return RenderInlineWrapped(node, renderer.InlineCodeStyle());
 
     case CMARK_NODE_HEADING: {
       int level = cmark_node_get_heading_level(node);
@@ -254,7 +294,7 @@ auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element {
     case CMARK_NODE_LINK:
     case CMARK_NODE_SOFTBREAK:
     case CMARK_NODE_LINEBREAK:
-      return RenderInlineWrapped(node);
+      return RenderInlineWrapped(node, renderer.InlineCodeStyle());
 
     default: {
       // Handle extension node types (runtime values, not compile-time constants).
@@ -271,7 +311,7 @@ auto RenderBlock(cmark_node* node, PlainRenderer& renderer) -> Element {
         return hbox(std::move(cells));
       }
       if (type_str == "table_cell") {
-        return RenderInlineWrapped(node);
+        return RenderInlineWrapped(node, renderer.InlineCodeStyle());
       }
       return vbox(RenderChildren(node, renderer));
     }
@@ -350,6 +390,10 @@ auto PlainRenderer::Render(const std::string& markdown) -> std::vector<RenderedB
   cmark_node_free(doc);
   cmark_parser_free(parser);
   return blocks;
+}
+
+auto PlainRenderer::InlineCodeStyle() const -> Decorator {
+  return inverted;
 }
 
 auto PlainRenderer::RenderCodeBlock(const std::string& code, const std::string& /*lang*/) -> Element {

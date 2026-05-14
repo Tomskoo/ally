@@ -14,8 +14,10 @@ class TreeSitterRenderer : public PlainRenderer {
   explicit TreeSitterRenderer(HighlightTheme theme, std::vector<std::filesystem::path> query_dirs = {});
 
   auto RenderCodeBlock(const std::string& code, const std::string& language) -> ftxui::Element override;
+  [[nodiscard]] auto InlineCodeStyle() const -> ftxui::Decorator override;
 
  private:
+  HighlightTheme theme_;
   QueryStore store_;
 };
 

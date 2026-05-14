@@ -29,6 +29,12 @@ class HighlightTheme {
   /// then "keyword.conditional", then "keyword", then fg().
   [[nodiscard]] auto Resolve(std::string_view capture) const -> ftxui::Color;
 
+  /// Resolve a capture name without falling back to fg(). Returns std::nullopt
+  /// if no entry exists at any level of the dotted-fallback walk. Useful when
+  /// the caller wants to distinguish "theme defines this capture" from "theme
+  /// is silent on this capture".
+  [[nodiscard]] auto TryResolve(std::string_view capture) const -> std::optional<ftxui::Color>;
+
   [[nodiscard]] auto fg() const -> ftxui::Color { return fg_; }
   [[nodiscard]] auto bg() const -> ftxui::Color { return bg_; }
 
