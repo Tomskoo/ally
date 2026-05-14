@@ -17,7 +17,31 @@ ally fixes this with four abstractions:
 - **Threads** — independent execution paths within a task. Fork a thread to explore an alternative approach without losing the original.
 - **Sessions** — AI conversations within a stage. Run multiple sessions per stage to try different prompts or models, and switch between them instantly.
 
-<!-- screenshot: annotated diagram showing Task > Thread > Stage > Session hierarchy -->
+```mermaid
+graph TD
+    Task["Task<br/><i>a unit of work</i>"]
+    Task --> Thread1["Thread: main"]
+    Task --> Thread2["Thread: alt-approach"]
+    Task --> ThreadN["Thread: ..."]
+
+    Thread1 --> Stage1["Stage: Research"]
+    Stage1 --> Stage2["Stage: Plan"]
+    Stage2 --> Stage3["Stage: Implement"]
+
+    Stage2 --> Session1["Session 1"]
+    Stage2 --> Session2["Session 2"]
+    Stage2 --> SessionN["Session ..."]
+
+    classDef task fill:#1f2937,stroke:#60a5fa,color:#e5e7eb
+    classDef thread fill:#1f2937,stroke:#34d399,color:#e5e7eb
+    classDef stage fill:#1f2937,stroke:#fbbf24,color:#e5e7eb
+    classDef session fill:#1f2937,stroke:#f472b6,color:#e5e7eb
+
+    class Task task
+    class Thread1,Thread2,ThreadN thread
+    class Stage1,Stage2,Stage3 stage
+    class Session1,Session2,SessionN session
+```
 
 ## Quick Start
 
