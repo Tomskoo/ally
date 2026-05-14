@@ -173,7 +173,7 @@ auto RenderCommandAutocomplete(const CommandBarState& state, const CommandRegist
     rows.push_back(text(" +" + std::to_string(item_count - max_items) + " more...") | dim);
   }
 
-  return vbox(std::move(rows)) | border | size(WIDTH, LESS_THAN, 40);
+  return vbox(std::move(rows)) | border;
 }
 
 auto HandleCommandBarEvent(CommandBarState& state, CommandRegistry& registry, const Event& event) -> bool {
@@ -187,12 +187,19 @@ auto HandleCommandBarEvent(CommandBarState& state, CommandRegistry& registry, co
     return true;
   }
 
-  // Enter — execute (accept arg autocomplete selection first if open)
+  // Enter — execute (accept autocomplete selection first if open)
   if (event == Event::Return) {
-    if (state.autocomplete_open && HasSpace(state.input_text)) {
-      auto filtered = GetArgCandidates(state.input_text, registry);
-      if (!filtered.empty() && state.autocomplete_selected < static_cast<int>(filtered.size())) {
-        state.input_text = FirstWord(state.input_text) + " " + filtered[state.autocomplete_selected].first;
+    if (state.autocomplete_open) {
+      if (HasSpace(state.input_text)) {
+        auto filtered = GetArgCandidates(state.input_text, registry);
+        if (!filtered.empty() && state.autocomplete_selected < static_cast<int>(filtered.size())) {
+          state.input_text = FirstWord(state.input_text) + " " + filtered[state.autocomplete_selected].first;
+        }
+      } else {
+        auto matches = registry.Match(FirstWord(state.input_text));
+        if (!matches.empty() && state.autocomplete_selected < static_cast<int>(matches.size())) {
+          state.input_text = matches[state.autocomplete_selected]->name;
+        }
       }
     }
     auto cmd = state.input_text;

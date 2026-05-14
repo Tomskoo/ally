@@ -39,8 +39,14 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
       return text("");
     }
     const auto& task = (*tasks)[state.index];
+    Elements name_parts;
+    name_parts.push_back(text(task.name));
+    if (task.description.has_value() && !task.description->empty()) {
+      name_parts.push_back(text("  "));
+      name_parts.push_back(text(*task.description) | dim);
+    }
     auto row = hbox({
-        text(task.name) | flex,
+        hbox(std::move(name_parts)) | flex,
         text("  "),
         ally::style::colour::render_stage_badge(task.stage) | size(WIDTH, EQUAL, kStageWidth),
         text("  "),
@@ -59,12 +65,11 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
       .selected = selected.get(),
       .entries_option = entry_option,
       .on_change = [] -> void {},
-      .on_enter =
-          [tasks, selected, &nav] -> void {
-            if (*selected >= 0 && *selected < static_cast<int>(tasks->size())) {
-              nav.go(TaskDetailState{(*tasks)[*selected].id});
-            }
-          },
+      .on_enter = [tasks, selected, &nav] -> void {
+        if (*selected >= 0 && *selected < static_cast<int>(tasks->size())) {
+          nav.go(TaskDetailState{(*tasks)[*selected].id});
+        }
+      },
   });
 
   auto new_task_btn = Button("+ New Task", [&nav] -> void { nav.go(NewTaskState{}); }, ButtonOption::Ascii());
@@ -82,7 +87,7 @@ auto task_board(AppContext& ctx, Navigator& nav) -> Component {
     });
 
     auto table_header = hbox({
-        text("Task Name") | bold | flex,
+        text("Task") | bold | flex,
         text("  "),
         text("Stage") | size(WIDTH, EQUAL, kStageWidth) | bold,
         text("  "),

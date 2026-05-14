@@ -17,36 +17,11 @@ using namespace ftxui;
 
 namespace {
 
-constexpr int kColStatus = 14;
 constexpr int kColStage = 14;
 constexpr int kColActivity = 16;
 constexpr int kColAction = 5;
 constexpr int kLabelWidth = 16;
 constexpr int kOverlayWidth = 52;
-
-auto status_label(models::ThreadStatus s) -> std::string {
-  switch (s) {
-    case models::ThreadStatus::Running:
-      return "Running";
-    case models::ThreadStatus::Idle:
-      return "Idle";
-    case models::ThreadStatus::Completed:
-      return "Completed";
-  }
-  return "";
-}
-
-auto status_color(models::ThreadStatus s) -> Color {
-  switch (s) {
-    case models::ThreadStatus::Running:
-      return Color::Blue;
-    case models::ThreadStatus::Idle:
-      return Color::Magenta;
-    case models::ThreadStatus::Completed:
-      return Color::Green;
-  }
-  return Color::Default;
-}
 
 struct ViewState {
   std::optional<models::Task> task = std::nullopt;
@@ -121,19 +96,16 @@ auto task_detail(AppContext& ctx, Navigator& nav, const std::string& task_id) ->
       auto tid = thread.id;
       auto t_stage = thread.current_stage;
       auto t_name = thread.name;
-      auto t_status = thread.status;
       auto t_activity = thread.last_activity;
 
       ButtonOption row_opt;
-      row_opt.transform = [t_name, t_status, t_stage, t_activity](const EntryState& e) -> Element {
+      row_opt.transform = [t_name, t_stage, t_activity](const EntryState& e) -> Element {
         auto stage_color = ally::style::colour::stage_fg_color(t_stage);
         Element stage_el = stage_color.has_value() ? (text(t_stage) | color(*stage_color) | size(WIDTH, EQUAL, kColStage))
                                                    : (text(t_stage) | size(WIDTH, EQUAL, kColStage));
 
         auto row = hbox({
             text(t_name) | flex,
-            text("  "),
-            text(status_label(t_status)) | color(status_color(t_status)) | size(WIDTH, EQUAL, kColStatus),
             text("  "),
             stage_el,
             text("  "),
@@ -233,8 +205,6 @@ auto task_detail(AppContext& ctx, Navigator& nav, const std::string& task_id) ->
     // Thread table
     auto table_header = hbox({
         text("Name") | bold | flex,
-        text("  "),
-        text("Status") | size(WIDTH, EQUAL, kColStatus) | bold,
         text("  "),
         text("Stage") | size(WIDTH, EQUAL, kColStage) | bold,
         text("  "),
